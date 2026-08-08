@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --text: #25221F;
+  --text-h: #25221F;
+  --bg: #F7F3EB;
+  --panel-bg: #FFFDF9;
+  --border: #E8E1D7;
+  --accent: #E8683A;
+  --accent-glow: rgba(232, 104, 58, 0.15);
+  --sans: 'Inter', 'Instrument Sans', system-ui, -apple-system, sans-serif;
+  --heading: 'Newsreader', 'Outfit', Georgia, serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0 15px;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--heading);
+  color: var(--text-h);
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Glassmorphism Panel style updated for warm light theme */
+.glass-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px -10px rgba(37, 34, 31, 0.05);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.glass-panel:hover {
+  border-color: rgba(232, 104, 58, 0.2);
+  box-shadow: 0 10px 40px -10px rgba(232, 104, 58, 0.05);
+}
+
+/* Button Premium Styles using color palette */
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+  box-shadow: 0 4px 14px 0 rgba(232, 104, 58, 0.2);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #D95A30;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px 0 rgba(232, 104, 58, 0.3);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  background: #A8B49A;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-secondary {
+  background: rgba(255, 253, 249, 0.8);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(232, 104, 58, 0.05);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Inputs */
+input[type="text"], textarea {
+  background: #FFFDF9;
+  border: 1px solid var(--border);
+  color: var(--text-h);
+  outline: none;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input[type="text"]:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 104, 58, 0.15);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(37, 34, 31, 0.1);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(232, 104, 58, 0.3);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Sticky notes specific animations */
+.sticky-note {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.sticky-note:hover {
+  transform: scale(1.05) rotate(0deg) !important;
+  box-shadow: 0 10px 15px -3px rgba(37, 34, 31, 0.1) !important;
+  z-index: 10 !important;
+}
