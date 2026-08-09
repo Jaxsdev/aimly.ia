@@ -228,6 +228,38 @@ create policy "Participants can update cards"
   );
 
 -- ============================================================
+-- excalidraw_scenes
+-- One durable scene per meeting. Realtime broadcasts remain ephemeral;
+-- this table lets late joiners and reconnecting clients recover the canvas.
+-- ============================================================
+create table if not exists public.excalidraw_scenes (
+  meeting_id  uuid primary key references public.meetings(id) on delete cascade,
+  elements    jsonb not null default '[]'::jsonb,
+  updated_by  uuid references public.profiles(id),
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.excalidraw_scenes enable row level security;
+
+create policy "Participants can view Excalidraw scenes"
+  on public.excalidraw_scenes for select
+  using (exists (
+    select 1 from public.meeting_participants mp
+    where mp.meeting_id = excalidraw_scenes.meeting_id and mp.user_id = auth.uid()
+  ));
+
+create policy "Participants can save Excalidraw scenes"
+  on public.excalidraw_scenes for all
+  using (exists (
+    select 1 from public.meeting_participants mp
+    where mp.meeting_id = excalidraw_scenes.meeting_id and mp.user_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from public.meeting_participants mp
+    where mp.meeting_id = excalidraw_scenes.meeting_id and mp.user_id = auth.uid()
+  ));
+
+-- ============================================================
 -- votes
 -- ============================================================
 create type public.vote_status as enum ('open', 'closed');

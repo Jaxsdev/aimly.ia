@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { 
@@ -23,6 +23,43 @@ export function Whiteboard() {
   
   // View Mode: 'excalidraw' (Motor completo estilo Obsidian/Excalidraw) or 'stickyNotes' (Notas adhesivas)
   const [viewMode, setViewMode] = useState<BoardViewMode>('excalidraw');
+  const [initialElements, setInitialElements] = useState<any[] | null>(null);
+  const latestElementsRef = useRef<readonly any[]>([]);
+  const persistTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!meeting?.id) return;
+
+    api.excalidraw.getScene(meeting.id)
+      .then((scene) => {
+        if (!cancelled) setInitialElements(Array.isArray(scene.elements) ? scene.elements : []);
+      })
+      .catch((error) => {
+        console.warn('[Whiteboard] Could not load shared scene; using local recovery copy.', error);
+        if (cancelled) return;
+        try {
+          setInitialElements(JSON.parse(localStorage.getItem(`excalidraw_scene_${meeting.id}`) || '[]'));
+        } catch {
+          setInitialElements([]);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [meeting?.id]);
+
+  useEffect(() => () => {
+    if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
+  }, []);
+
+  const scheduleScenePersistence = () => {
+    if (!meeting?.id || (window as any).isIncomingSync) return;
+    if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = window.setTimeout(() => {
+      api.excalidraw.saveScene(meeting.id, latestElementsRef.current)
+        .catch((error) => console.warn('[Whiteboard] Could not persist shared scene.', error));
+    }, 1200);
+  };
 
   // Sync collaborators real-time cursors via imperative API
   useEffect(() => {
@@ -126,24 +163,20 @@ export function Whiteboard() {
             if ((window as any).flushPendingDeltas) {
               (window as any).flushPendingDeltas();
             }
+            scheduleScenePersistence();
           }}
         >
-          <Excalidraw 
+          {initialElements !== null ? <Excalidraw
             theme="light"
+            isCollaborating
             initialData={{
-              elements: (() => {
-                try {
-                  const saved = localStorage.getItem(`excalidraw_scene_${meeting?.id}`);
-                  return saved ? JSON.parse(saved) : [];
-                } catch (e) {
-                  return [];
-                }
-              })()
+              elements: initialElements
             }}
             excalidrawAPI={(api) => {
               (window as any).excalidrawAPI = api;
             }}
             onChange={(elements) => {
+              latestElementsRef.current = elements;
               if (meeting?.id) {
                 // Save to local storage asynchronously
                 try {
@@ -162,6 +195,8 @@ export function Whiteboard() {
                 }
               }
 
+              scheduleScenePersistence();
+
               // Extract non-deleted text elements from Excalidraw canvas for AI context
               const textNodes = elements.filter((el: any) => el.type === 'text' && el.text && el.text.trim().length > 0 && !el.isDeleted);
               for (const node of textNodes) {
@@ -179,8 +214,8 @@ export function Whiteboard() {
               }
             }}
             onPointerUpdate={(payload) => {
-              if (payload.pointer && (window as any).broadcastPointer && payload.button !== "down") {
-                (window as any).broadcastPointer(payload.pointer);
+              if (payload.pointer && (window as any).broadcastPointer) {
+                (window as any).broadcastPointer(payload.pointer, payload.button);
               }
             }}
             UIOptions={{
@@ -193,7 +228,7 @@ export function Whiteboard() {
                 toggleTheme: false
               }
             }}
-          />
+          /> : <div className="h-full flex items-center justify-center text-sm text-aimly-text/60">Cargando pizarra compartida…</div>}
         </div>
       )}
 

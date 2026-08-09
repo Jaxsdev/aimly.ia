@@ -32,6 +32,10 @@ const updateCardSchema = z.object({
   groupId: z.string().nullable().optional()
 });
 
+const saveExcalidrawSceneSchema = z.object({
+  elements: z.array(z.unknown()).max(5000)
+});
+
 const createVoteSchema = z.object({
   question: z.string().min(1).max(500),
   options: z.array(z.string().min(1).max(200)).min(2).max(10),
@@ -464,6 +468,41 @@ server.patch(
       await publishMeetingEvent(meetingId, 'board_card_updated', data);
     }
 
+    return reply.send({ success: true, data });
+  }
+);
+
+// ============================================================
+// EXCALIDRAW SCENE PERSISTENCE
+// ============================================================
+
+server.get(
+  '/api/meetings/:meetingId/excalidraw-scene',
+  { preHandler: requireAuth },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const { data, error } = await supabase
+      .from('excalidraw_scenes')
+      .select('elements, updated_at')
+      .eq('meeting_id', meetingId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return reply.send({ success: true, data: data || { elements: [], updated_at: null } });
+  }
+);
+
+server.put(
+  '/api/meetings/:meetingId/excalidraw-scene',
+  { preHandler: requireAuth, schema: { body: saveExcalidrawSceneSchema } },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const { elements } = request.body as z.infer<typeof saveExcalidrawSceneSchema>;
+    const { data, error } = await supabase
+      .from('excalidraw_scenes')
+      .upsert({ meeting_id: meetingId, elements, updated_by: request.user.id, updated_at: new Date().toISOString() })
+      .select('elements, updated_at')
+      .single();
+    if (error) throw new Error(error.message);
     return reply.send({ success: true, data });
   }
 );

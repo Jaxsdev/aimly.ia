@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { CaptureUpdateAction, reconcileElements } from '@excalidraw/excalidraw';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { subscribeToMeeting, sendPortalEvent } from '../realtime/portal.client';
@@ -212,23 +213,18 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             }
 
             (window as any).isIncomingSync = true;
-            const currentElements = (window as any).excalidrawAPI.getSceneElements() || [];
-            const elementMap = new Map<string, any>(currentElements.map((el: any) => [el.id, el]));
-
-            for (const delta of payload.deltas) {
-              const existing = elementMap.get(delta.id);
-              if (!existing || (delta.version && delta.version >= (existing.version || 0))) {
-                elementMap.set(delta.id, delta);
-                knownElementsRef.current.set(delta.id, delta.version || 0);
-              }
+            const api = (window as any).excalidrawAPI;
+            const currentElements = api.getSceneElementsIncludingDeleted() || [];
+            const appState = api.getAppState();
+            const merged = reconcileElements(currentElements as any, payload.deltas as any, appState as any);
+            for (const element of payload.deltas) {
+              knownElementsRef.current.set(element.id, element.version || 0);
             }
-
-            const merged = Array.from(elementMap.values());
             try {
               localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
             } catch (e) {}
 
-            (window as any).excalidrawAPI.updateScene({ elements: merged });
+            api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
             setTimeout(() => {
               (window as any).isIncomingSync = false;
             }, 50);
@@ -242,7 +238,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
           setCollaborators(prev => {
             const next = new Map(prev);
             next.set(payload.userId, {
-              pointer: { x: payload.x, y: payload.y, tool: 'pointer' },
+              pointer: { x: payload.x, y: payload.y, tool: payload.tool || 'pointer' },
               button: payload.button || 'up',
               username: payload.name || 'Compañero',
               color: { background: '#F15A24', stroke: '#FFFFFF' }
@@ -306,7 +302,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       }
     };
 
-    (window as any).broadcastPointer = (pointer: { x: number; y: number }) => {
+    (window as any).broadcastPointer = (pointer: { x: number; y: number; tool?: 'pointer' | 'laser' }, button: 'up' | 'down') => {
       const now = Date.now();
       if (now - ((window as any).lastPointerBroadcast || 0) > 50) { // 20fps throttled
         (window as any).lastPointerBroadcast = now;
@@ -317,6 +313,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             payload: {
               x: pointer.x,
               y: pointer.y,
+              tool: pointer.tool || 'pointer',
+              button,
               userId: user.id,
               name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
             }
@@ -330,20 +328,19 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       if (pending && pending.length > 0 && (window as any).excalidrawAPI) {
         (window as any).pendingDeltas = [];
         (window as any).isIncomingSync = true;
-        const currentElements = (window as any).excalidrawAPI.getSceneElements() || [];
-        const elementMap = new Map<string, any>(currentElements.map((el: any) => [el.id, el]));
-        for (const delta of pending) {
-          const existing = elementMap.get(delta.id);
-          if (!existing || (delta.version && delta.version >= (existing.version || 0))) {
-            elementMap.set(delta.id, delta);
-            knownElementsRef.current.set(delta.id, delta.version || 0);
-          }
+        const api = (window as any).excalidrawAPI;
+        const merged = reconcileElements(
+          api.getSceneElementsIncludingDeleted() || [],
+          pending,
+          api.getAppState()
+        );
+        for (const element of pending) {
+          knownElementsRef.current.set(element.id, element.version || 0);
         }
-        const merged = Array.from(elementMap.values());
         try {
           localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
         } catch (e) {}
-        (window as any).excalidrawAPI.updateScene({ elements: merged });
+        api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
         setTimeout(() => {
           (window as any).isIncomingSync = false;
         }, 50);

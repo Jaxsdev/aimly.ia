@@ -84,6 +84,12 @@ export const api = {
       apiRequest('PATCH', `/api/meetings/${meetingId}/cards/${cardId}`, updates)
   },
 
+  excalidraw: {
+    getScene: (meetingId: string) => apiRequest<{ elements: any[]; updated_at: string | null }>('GET', `/api/meetings/${meetingId}/excalidraw-scene`),
+    saveScene: (meetingId: string, elements: readonly any[]) =>
+      apiRequest('PUT', `/api/meetings/${meetingId}/excalidraw-scene`, { elements })
+  },
+
   votes: {
     create: (meetingId: string, body: { question: string; options: string[]; criteria?: string[] }) =>
       apiRequest('POST', `/api/meetings/${meetingId}/votes`, body),
