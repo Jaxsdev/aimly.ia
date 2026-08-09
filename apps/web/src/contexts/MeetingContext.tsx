@@ -22,6 +22,7 @@ interface MeetingContextType {
   messages: any[];
   cards: any[];
   participants: Participant[];
+  collaborators: Map<string, any>;
   loading: boolean;
   isConnected: boolean;
   sendMessage: (content: string) => Promise<void>;
@@ -42,6 +43,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const [messages, setMessages] = useState<any[]>([]);
   const [cards, setCards] = useState<any[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [collaborators, setCollaborators] = useState<Map<string, any>>(new Map());
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -201,8 +203,27 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(payload.elements));
           } catch (e) {}
           if ((window as any).excalidrawAPI) {
+            (window as any).isIncomingSync = true;
             (window as any).excalidrawAPI.updateScene({ elements: payload.elements });
+            setTimeout(() => {
+              (window as any).isIncomingSync = false;
+            }, 50);
           }
+        }
+      })
+
+      // ── Realtime Mouse Cursors Sync ──────────────────────────
+      .on('broadcast', { event: 'mouse_move' }, ({ payload }) => {
+        if (payload?.userId && payload.userId !== user.id) {
+          setCollaborators(prev => {
+            const next = new Map(prev);
+            next.set(payload.userId, {
+              pointer: { x: payload.x, y: payload.y },
+              username: payload.name || 'Compañero',
+              color: '#F15A24'
+            });
+            return next;
+          });
         }
       })
 
@@ -244,6 +265,21 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
           type: 'broadcast',
           event: 'excalidraw_stroke',
           payload: { elements }
+        });
+      }
+    };
+
+    (window as any).broadcastPointer = (pointer: { x: number; y: number }) => {
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'mouse_move',
+          payload: {
+            x: pointer.x,
+            y: pointer.y,
+            userId: user.id,
+            name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
+          }
         });
       }
     };
@@ -363,6 +399,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       messages,
       cards,
       participants,
+      collaborators,
       loading,
       isConnected,
       sendMessage,

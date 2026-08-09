@@ -19,10 +19,18 @@ const COLOR_PALETTE = [
 ];
 
 export function Whiteboard() {
-  const { meeting, cards, createCard, updateCard, refreshMeeting } = useMeeting();
+  const { meeting, cards, createCard, updateCard, refreshMeeting, collaborators } = useMeeting();
   
   // View Mode: 'excalidraw' (Motor completo estilo Obsidian/Excalidraw) or 'stickyNotes' (Notas adhesivas)
   const [viewMode, setViewMode] = useState<BoardViewMode>('excalidraw');
+
+  // Sync collaborators real-time cursors via imperative API
+  useEffect(() => {
+    const api = (window as any).excalidrawAPI;
+    if (api && collaborators) {
+      api.updateScene({ collaborators });
+    }
+  }, [collaborators]);
 
   // Sticky notes state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -131,17 +139,14 @@ export function Whiteboard() {
                   localStorage.setItem(`excalidraw_scene_${meeting.id}`, JSON.stringify(elements));
                 } catch (e) {}
 
-                // Direct 60fps WebSocket broadcast (Pinturillo 2 speed)
-                const now = Date.now();
-                if (now - ((window as any).lastExcalidrawBroadcast || 0) > 16) {
-                  (window as any).lastExcalidrawBroadcast = now;
-                  if ((window as any).broadcastStroke) {
-                    (window as any).broadcastStroke(elements);
-                  } else {
-                    sendPortalEvent(meeting.id, {
-                      type: 'agent_action',
-                      payload: { action: 'excalidraw_sync', elements }
-                    } as any);
+                // Only broadcast strokes if this is a local change, not an incoming sync!
+                if (!(window as any).isIncomingSync) {
+                  const now = Date.now();
+                  if (now - ((window as any).lastExcalidrawBroadcast || 0) > 30) {
+                    (window as any).lastExcalidrawBroadcast = now;
+                    if ((window as any).broadcastStroke) {
+                      (window as any).broadcastStroke(elements);
+                    }
                   }
                 }
               }
@@ -160,6 +165,11 @@ export function Whiteboard() {
                     color: 'orange'
                   }).catch(() => {});
                 }
+              }
+            }}
+            onPointerUpdate={(payload) => {
+              if (payload.pointer && (window as any).broadcastPointer && payload.button !== "down") {
+                (window as any).broadcastPointer(payload.pointer);
               }
             }}
             UIOptions={{
