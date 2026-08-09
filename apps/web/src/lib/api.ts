@@ -77,7 +77,7 @@ export const api = {
   cards: {
     list: (meetingId: string) => apiRequest('GET', `/api/meetings/${meetingId}/cards`),
 
-    create: (meetingId: string, card: { text: string; type: 'idea'; x: number; y: number }) =>
+    create: (meetingId: string, card: { id: string; text: string; type: 'idea'; x: number; y: number; color?: string }) =>
       apiRequest('POST', `/api/meetings/${meetingId}/cards`, card),
 
     update: (meetingId: string, cardId: string, updates: { text?: string; x?: number; y?: number; groupId?: string | null }) =>

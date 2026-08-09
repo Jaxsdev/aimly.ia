@@ -19,6 +19,7 @@ const createMeetingSchema = z.object({
 });
 
 const createCardSchema = z.object({
+  id: z.string().uuid().optional(),
   text: z.string().min(1).max(1000),
   type: z.enum(['idea', 'group']).default('idea'),
   x: z.number().default(0),
@@ -420,6 +421,7 @@ server.post(
     const { data, error } = await supabase
       .from('board_cards')
       .insert({
+        ...(input.id ? { id: input.id } : {}),
         meeting_id: meetingId,
         text: input.text,
         type: input.type,

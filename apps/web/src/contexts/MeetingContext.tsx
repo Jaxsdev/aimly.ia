@@ -473,25 +473,36 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   };
 
   const createCard = async (cardData: any) => {
-    const tempCard = {
-      id: `temp-${Date.now()}`,
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`;
+    const newCard = {
+      id,
       meeting_id: meetingId,
       ...cardData,
       created_at: new Date().toISOString()
     };
-    setCards(prev => [...prev, tempCard]);
-
-    const newCard = await api.cards.create(meetingId, cardData) as any;
-    setCards(prev => prev.map(c => c.id === tempCard.id ? newCard : c));
+    setCards(prev => [...prev, newCard]);
     sendBroadcast('board_card_created', newCard);
+    try {
+      const savedCard = await api.cards.create(meetingId, newCard) as any;
+      setCards(prev => prev.map(card => card.id === id ? { ...card, ...savedCard } : card));
+    } catch (error) {
+      setCards(prev => prev.filter(card => card.id !== id));
+      throw error;
+    }
   };
 
   const updateCard = async (cardId: string, updates: any) => {
-    // Optimistic update
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updates } : c));
-    const updatedCard = await api.cards.update(meetingId, cardId, updates) as any;
-    setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updatedCard } : c));
-    sendBroadcast('board_card_updated', updatedCard);
+    sendBroadcast('board_card_updated', { id: cardId, ...updates });
+    try {
+      const updatedCard = await api.cards.update(meetingId, cardId, updates) as any;
+      setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updatedCard } : c));
+    } catch (error) {
+      await fetchAll();
+      throw error;
+    }
   };
 
   return (

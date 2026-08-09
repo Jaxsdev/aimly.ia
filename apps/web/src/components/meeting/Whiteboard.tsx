@@ -119,13 +119,26 @@ export function Whiteboard() {
 
   const handleDeleteCard = async (id: string) => {
     try {
-      await api.cards.update(meeting.id, id, { text: '[Eliminada]' });
-      refreshMeeting();
+      await updateCard(id, { text: '[Eliminada]' });
       setSelectedCardId(null);
     } catch (err) {
       console.error('Error deleting card:', err);
     }
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!selectedCardId || editingCardId) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) return;
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        handleDeleteCard(selectedCardId);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedCardId, editingCardId]);
 
   return (
     <div className="flex-1 h-full bg-[#FCFAf7] relative overflow-hidden flex flex-col">
