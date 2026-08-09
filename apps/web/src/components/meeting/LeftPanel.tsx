@@ -1,31 +1,16 @@
-import React, { useEffect, useRef } from 'react';
-import { Mic, MicOff, MonitorUp, Phone, PhoneOff, Users, Video, VideoOff } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, ClipboardList, Mic, MicOff, MonitorUp, Pencil, Phone, PhoneOff, Target, Users, Video, VideoOff } from 'lucide-react';
 import { useMeeting } from '../../contexts/MeetingContext';
 import { useAuth } from '../../contexts/AuthContext';
 import type { PeerState } from '../../hooks/useWebRTC';
+import { api } from '../../lib/api';
 
-interface CallPanelProps {
-  isInCall: boolean;
-  localStream: MediaStream | null;
-  peers: Record<string, PeerState>;
-  audioOn: boolean;
-  isSpeaking: boolean;
-  videoOn: boolean;
-  isScreenSharing: boolean;
-  onJoinCall: () => void;
-  onLeaveCall: () => void;
-  onToggleAudio: () => void;
-  onToggleVideo: () => void;
-  onToggleScreenShare: () => void;
-}
+interface CallPanelProps { isInCall: boolean; localStream: MediaStream | null; peers: Record<string, PeerState>; audioOn: boolean; isSpeaking: boolean; videoOn: boolean; isScreenSharing: boolean; onJoinCall: () => void; onLeaveCall: () => void; onToggleAudio: () => void; onToggleVideo: () => void; onToggleScreenShare: () => void; }
 
 function ParticipantTile({ name, stream, videoOn, isMe, muted }: { name: string; stream?: MediaStream | null; videoOn: boolean; isMe?: boolean; muted?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (videoRef.current && stream) videoRef.current.srcObject = stream;
-  }, [stream]);
+  useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream]);
   const initials = name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
-
   return <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-aimly-border bg-[#2D2A27] shadow-sm">
     {stream && videoOn ? <video ref={videoRef} autoPlay playsInline muted={isMe} className={`h-full w-full object-cover ${isMe ? 'scale-x-[-1]' : ''}`} /> : <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-[#423D37] to-[#24211F] text-white"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-aimly-orange text-sm font-bold">{initials}</span><span className="max-w-[90%] truncate px-2 text-[10px] font-semibold">{isMe ? 'Tú' : name}</span></div>}
     <div className="absolute bottom-1.5 left-1.5 flex max-w-[90%] items-center gap-1 rounded-md bg-black/55 px-1.5 py-1 text-[9px] font-semibold text-white"><span className="truncate">{isMe ? 'Tú' : name}</span>{muted && <MicOff size={10} className="text-red-300" />}</div>
@@ -33,30 +18,19 @@ function ParticipantTile({ name, stream, videoOn, isMe, muted }: { name: string;
 }
 
 export function LeftPanel(props: CallPanelProps) {
-  const { participants } = useMeeting();
-  const { user } = useAuth();
-  const myName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Tú';
-  const peers = Object.values(props.peers);
-  const inCallIds = new Set([user?.id, ...peers.map((peer) => peer.userId)]);
-  const waitingParticipants = participants.filter((participant) => !inCallIds.has(participant.userId));
-
+  const { meeting, participants, refreshMeeting } = useMeeting(); const { user } = useAuth();
+  const [activeView, setActiveView] = useState<'personas' | 'objetivo' | 'agenda'>('personas'); const [editing, setEditing] = useState(false); const [objective, setObjective] = useState(''); const [expectedOutcome, setExpectedOutcome] = useState(''); const [saving, setSaving] = useState(false);
+  const myName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Tú'; const isHost = Boolean(meeting?.host_id && meeting.host_id === user?.id); const peers = Object.values(props.peers); const inCallIds = new Set([user?.id, ...peers.map((peer) => peer.userId)]); const waitingParticipants = participants.filter((participant) => !inCallIds.has(participant.userId));
+  useEffect(() => { setObjective(meeting?.objective || ''); setExpectedOutcome(meeting?.expected_outcome || ''); }, [meeting?.objective, meeting?.expected_outcome]);
+  const saveFocus = async () => { if (!meeting?.id || !objective.trim() || !expectedOutcome.trim()) return; setSaving(true); try { await api.meetings.updateFocus(meeting.id, { objective: objective.trim(), expectedOutcome: expectedOutcome.trim() }); await refreshMeeting(); setEditing(false); } catch (error) { console.error('[Sala] No se pudo actualizar el objetivo:', error); window.alert(error instanceof Error ? error.message : 'No se pudo actualizar el objetivo'); } finally { setSaving(false); } };
+  const agenda = [['1', 'Alinear el objetivo', true], ['2', 'Compartir ideas', false], ['3', 'Organizar y priorizar', false], ['4', 'Tomar decisiones', false], ['5', 'Definir próximos pasos', false]] as const;
   return <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-hidden border-r border-aimly-border bg-aimly-surface">
-    <div className="border-b border-aimly-border px-4 py-3">
-      <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Users size={16} className="text-aimly-orange" /><h3 className="text-sm font-bold text-aimly-text">En la sala</h3></div><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{participants.length || 1} online</span></div>
-      <p className="mt-1 text-[11px] text-aimly-text/55">Cámara, audio y presencia</p>
-    </div>
-
+    <div className="border-b border-aimly-border px-4 py-3"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><Users size={16} className="text-aimly-orange" /><h3 className="text-sm font-bold text-aimly-text">En la sala</h3></div><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{participants.length || 1} online</span></div><div className="mt-3 grid grid-cols-3 rounded-xl bg-aimly-bg p-1 text-[10px] font-bold"><button onClick={() => setActiveView('personas')} className={`rounded-lg px-1 py-1.5 ${activeView === 'personas' ? 'bg-white text-aimly-orange shadow-sm' : 'text-aimly-text/55'}`}>Personas</button><button onClick={() => setActiveView('objetivo')} className={`rounded-lg px-1 py-1.5 ${activeView === 'objetivo' ? 'bg-white text-aimly-orange shadow-sm' : 'text-aimly-text/55'}`}>Objetivo</button><button onClick={() => setActiveView('agenda')} className={`rounded-lg px-1 py-1.5 ${activeView === 'agenda' ? 'bg-white text-aimly-orange shadow-sm' : 'text-aimly-text/55'}`}>Agenda</button></div></div>
     <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-      <div className="grid grid-cols-1 gap-2">
-        {props.isInCall && <ParticipantTile name={myName} stream={props.localStream} videoOn={props.videoOn} isMe muted={!props.audioOn} />}
-        {peers.slice(0, 3).map((peer) => <ParticipantTile key={peer.userId} name={peer.name} stream={peer.stream} videoOn={peer.videoOn} muted={!peer.audioOn} />)}
-        {waitingParticipants.slice(0, props.isInCall ? Math.max(0, 4 - (1 + peers.length)) : 4).map((participant) => <ParticipantTile key={participant.userId} name={participant.name} videoOn={false} />)}
-        {!props.isInCall && waitingParticipants.length === 0 && <ParticipantTile name={myName} videoOn={false} isMe />}
-      </div>
+      {activeView === 'personas' && <div className="grid grid-cols-1 gap-2">{props.isInCall && <ParticipantTile name={myName} stream={props.localStream} videoOn={props.videoOn} isMe muted={!props.audioOn} />}{peers.slice(0, 3).map((peer) => <ParticipantTile key={peer.userId} name={peer.name} stream={peer.stream} videoOn={peer.videoOn} muted={!peer.audioOn} />)}{waitingParticipants.slice(0, props.isInCall ? Math.max(0, 4 - (1 + peers.length)) : 4).map((participant) => <ParticipantTile key={participant.userId} name={participant.name} videoOn={false} />)}{!props.isInCall && waitingParticipants.length === 0 && <ParticipantTile name={myName} videoOn={false} isMe />}</div>}
+      {activeView === 'objetivo' && <div className="space-y-3"><div className="rounded-2xl border border-aimly-border bg-white p-3 shadow-sm"><div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-1.5 text-xs font-bold text-aimly-text"><Target size={15} className="text-aimly-orange" /> Enfoque actual</div>{isHost && !editing && <button onClick={() => setEditing(true)} className="flex items-center gap-1 text-[10px] font-bold text-aimly-orange"><Pencil size={12} /> Editar</button>}</div>{editing ? <textarea value={objective} onChange={(event) => setObjective(event.target.value)} rows={4} className="w-full resize-none rounded-xl border border-aimly-border bg-aimly-bg p-2 text-xs outline-none focus:border-aimly-orange" /> : <p className="text-xs leading-relaxed text-aimly-text/75">{meeting?.objective || 'Aún no se ha definido un objetivo.'}</p>}</div><div className="rounded-2xl border border-aimly-border bg-white p-3 shadow-sm"><p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-aimly-text/45">Resultado esperado</p>{editing ? <textarea value={expectedOutcome} onChange={(event) => setExpectedOutcome(event.target.value)} rows={4} className="w-full resize-none rounded-xl border border-aimly-border bg-aimly-bg p-2 text-xs outline-none focus:border-aimly-orange" /> : <p className="text-xs leading-relaxed text-aimly-text/75">{meeting?.expected_outcome || 'Definir el resultado que se busca conseguir.'}</p>}</div>{editing && <div className="flex gap-2"><button onClick={() => { setEditing(false); setObjective(meeting?.objective || ''); setExpectedOutcome(meeting?.expected_outcome || ''); }} className="flex-1 rounded-xl border border-aimly-border py-2 text-xs font-bold text-aimly-text/60">Cancelar</button><button disabled={saving || !objective.trim() || !expectedOutcome.trim()} onClick={saveFocus} className="flex-1 rounded-xl bg-aimly-orange py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar enfoque'}</button></div>}{!isHost && <p className="px-1 text-[10px] leading-relaxed text-aimly-text/45">Solo el host puede modificar el enfoque de la reunión.</p>}</div>}
+      {activeView === 'agenda' && <div className="space-y-2"><p className="px-1 text-[11px] text-aimly-text/55">Una guía breve para mantener la reunión enfocada.</p>{agenda.map(([number, label, complete]) => <div key={number} className="flex items-center gap-3 rounded-xl border border-aimly-border bg-white p-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-aimly-bg text-[10px] font-bold text-aimly-orange">{number}</span><span className="flex-1 text-xs font-semibold text-aimly-text/75">{label}</span>{complete ? <CheckCircle2 size={16} className="text-emerald-500" /> : <ClipboardList size={15} className="text-aimly-text/30" />}</div>)}</div>}
     </div>
-
-    <div className="border-t border-aimly-border bg-white p-3">
-      {!props.isInCall ? <button onClick={props.onJoinCall} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-500"><Phone size={15} /> Unirme a la llamada</button> : <div className="flex items-center justify-between gap-2"><button onClick={props.onToggleAudio} title="Micrófono" className={`relative flex h-10 w-10 items-center justify-center rounded-xl ${props.audioOn ? 'bg-aimly-bg text-aimly-text' : 'bg-red-50 text-red-500'} ${props.audioOn && props.isSpeaking ? 'ring-2 ring-emerald-400' : ''}`}>{props.audioOn && props.isSpeaking && <span className="absolute inset-0 animate-ping rounded-xl bg-emerald-400/30" />}{props.audioOn ? <Mic size={17} /> : <MicOff size={17} />}</button><button onClick={props.onToggleVideo} title="Cámara" className={`flex h-10 w-10 items-center justify-center rounded-xl ${props.videoOn ? 'bg-aimly-bg text-aimly-text' : 'bg-red-50 text-red-500'}`}>{props.videoOn ? <Video size={17} /> : <VideoOff size={17} />}</button><button onClick={props.onToggleScreenShare} title="Compartir pantalla" className={`flex h-10 w-10 items-center justify-center rounded-xl ${props.isScreenSharing ? 'bg-aimly-orange text-white' : 'bg-aimly-bg text-aimly-text'}`}><MonitorUp size={17} /></button><button onClick={props.onLeaveCall} title="Salir" className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500 text-white"><PhoneOff size={17} /></button></div>}
-    </div>
+    <div className="border-t border-aimly-border bg-white p-3">{!props.isInCall ? <button onClick={props.onJoinCall} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-500"><Phone size={15} /> Unirme a la llamada</button> : <div className="flex items-center justify-between gap-2"><button onClick={props.onToggleAudio} title="Micrófono" className={`relative flex h-10 w-10 items-center justify-center rounded-xl ${props.audioOn ? 'bg-aimly-bg text-aimly-text' : 'bg-red-50 text-red-500'} ${props.audioOn && props.isSpeaking ? 'ring-2 ring-emerald-400' : ''}`}>{props.audioOn && props.isSpeaking && <span className="absolute inset-0 animate-ping rounded-xl bg-emerald-400/30" />}{props.audioOn ? <Mic size={17} /> : <MicOff size={17} />}</button><button onClick={props.onToggleVideo} title="Cámara" className={`flex h-10 w-10 items-center justify-center rounded-xl ${props.videoOn ? 'bg-aimly-bg text-aimly-text' : 'bg-red-50 text-red-500'}`}>{props.videoOn ? <Video size={17} /> : <VideoOff size={17} />}</button><button onClick={props.onToggleScreenShare} title="Compartir pantalla" className={`flex h-10 w-10 items-center justify-center rounded-xl ${props.isScreenSharing ? 'bg-aimly-orange text-white' : 'bg-aimly-bg text-aimly-text'}`}><MonitorUp size={17} /></button><button onClick={props.onLeaveCall} title="Salir" className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500 text-white"><PhoneOff size={17} /></button></div>}</div>
   </aside>;
 }

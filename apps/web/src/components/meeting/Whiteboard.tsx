@@ -3,7 +3,7 @@ import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { 
   MousePointer2, StickyNote, Type, Trash2, Edit3, Plus, 
-  Check, X, Sparkles, Move, LayoutGrid, PenTool
+  Check, X, Sparkles, Move, LayoutGrid, PenTool, Target
 } from 'lucide-react';
 import { useMeeting } from '../../contexts/MeetingContext';
 import { api } from '../../lib/api';
@@ -163,11 +163,12 @@ export function Whiteboard() {
           <StickyNote size={14} /> Notas Adhesivas ({cards.filter(c => c.text !== '[Eliminada]').length})
         </button>
       </div>
+      {meeting?.objective && <div className="absolute left-4 right-4 top-14 z-20 flex items-center gap-2 rounded-xl border border-aimly-border/80 bg-white/90 px-3 py-1.5 text-xs text-aimly-text/70 shadow-sm backdrop-blur pointer-events-none"><Target size={14} className="shrink-0 text-aimly-orange" /><span className="font-semibold text-aimly-text">Objetivo:</span><span className="truncate">{meeting.objective}</span></div>}
 
       {/* ── MODE 1: EXCALIDRAW ENGINE ── */}
       {viewMode === 'excalidraw' && (
         <div 
-          className="w-full h-full relative z-10 pt-12"
+          className="w-full h-full relative z-10 pt-20"
           onPointerDown={() => {
             (window as any).isUserDrawing = true;
           }}
@@ -248,7 +249,7 @@ export function Whiteboard() {
       {/* ── MODE 2: STICKY NOTES CANVAS ── */}
       {viewMode === 'stickyNotes' && (
         <div 
-          className="w-full h-full relative overflow-hidden pt-12"
+          className="w-full h-full relative overflow-hidden pt-20"
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             (window as any).broadcastStickyCursor?.(

@@ -60,6 +60,9 @@ export const api = {
 
     get: (meetingId: string) => apiRequest('GET', `/api/meetings/${meetingId}`),
 
+    updateFocus: (meetingId: string, body: { objective: string; expectedOutcome: string }) =>
+      apiRequest('PATCH', `/api/meetings/${meetingId}/focus`, body),
+
     join: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/join`),
 
     analyze: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/analyze`),

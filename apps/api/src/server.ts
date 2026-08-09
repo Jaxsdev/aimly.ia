@@ -33,6 +33,11 @@ const updateCardSchema = z.object({
   groupId: z.string().nullable().optional()
 });
 
+const updateMeetingFocusSchema = z.object({
+  objective: z.string().min(1).max(2000),
+  expectedOutcome: z.string().min(1).max(2000)
+});
+
 const saveExcalidrawSceneSchema = z.object({
   elements: z.array(z.unknown()).max(5000)
 });
@@ -48,6 +53,7 @@ const castVoteSchema = z.object({
 });
 
 type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
+type UpdateMeetingFocusInput = z.infer<typeof updateMeetingFocusSchema>;
 type CreateCardInput = z.infer<typeof createCardSchema>;
 type UpdateCardInput = z.infer<typeof updateCardSchema>;
 type CreateVoteInput = z.infer<typeof createVoteSchema>;
@@ -490,6 +496,23 @@ server.get(
       .maybeSingle();
     if (error) throw new Error(error.message);
     return reply.send({ success: true, data: data || { elements: [], updated_at: null } });
+  }
+);
+
+server.patch(
+  '/api/meetings/:meetingId/focus',
+  { preHandler: requireAuth, schema: { body: updateMeetingFocusSchema } },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const input = request.body as UpdateMeetingFocusInput;
+    const { data: meeting, error: meetingError } = await supabase.from('meetings').select('id, host_id').eq('id', meetingId).single();
+    if (meetingError || !meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Reunión no encontrada' } });
+    if (meeting.host_id !== request.user.id) return reply.status(403).send({ success: false, error: { code: 'HOST_ONLY', message: 'Solo el host puede actualizar el objetivo de la reunión' } });
+
+    const { data, error } = await supabase.from('meetings').update({ objective: input.objective, expected_outcome: input.expectedOutcome, updated_at: new Date().toISOString() }).eq('id', meetingId).select().single();
+    if (error) throw new Error(error.message);
+    await publishMeetingEvent(meetingId, 'meeting_focus_updated', data);
+    return reply.send({ success: true, data });
   }
 );
 
