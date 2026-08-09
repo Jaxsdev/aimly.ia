@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sparkles, Check, Send, AlertCircle, BarChart3, Lock, MessageSquare, PlusCircle } from 'lucide-react';
+import { Sparkles, Check, Send, AlertCircle, BarChart3, Lock, MessageSquare, PlusCircle, ListTodo, UserRound } from 'lucide-react';
 import { Card, Badge } from '../ui';
 import { AimLyState, demoVote, demoDecision, demoTasks } from '../../mocks';
 import { useMeeting } from '../../contexts/MeetingContext';
@@ -33,6 +33,8 @@ export function AimLyPanel() {
     }
   ]);
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [isPreparingTasks, setIsPreparingTasks] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,12 +43,43 @@ export function AimLyPanel() {
     }
   }, [privateMessages, messages, activeTab]);
 
+  useEffect(() => {
+    if (activeTab !== 'Tareas' || !meeting?.id) return;
+    api.tasks.list(meeting.id).then(setTasks).catch((error) => console.warn('[AimLy] No se pudieron cargar las tareas.', error));
+  }, [activeTab, meeting?.id]);
+
   const handleSendRoomMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const content = input.trim();
     if (!content) return;
     await sendMessage(content);
     setInput('');
+  };
+
+  const handleGroupIntervention = async () => {
+    if (!meeting?.id || isSendingChat) return;
+    setIsSendingChat(true);
+    try {
+      const response = await api.aimly.facilitateGroup(meeting.id);
+      await sendMessage(`🤖 AimLy: ${response.text}`);
+    } catch (error) {
+      console.error('[AimLy] No se pudo generar la intervención grupal.', error);
+      alert('AimLy no pudo intervenir en este momento. Inténtalo nuevamente.');
+    } finally { setIsSendingChat(false); }
+  };
+
+  const handleGenerateTasks = async () => {
+    if (!meeting?.id || isPreparingTasks) return;
+    setIsPreparingTasks(true);
+    try {
+      const suggestions = await api.aimly.suggestTasks(meeting.id);
+      if (!suggestions.length) return;
+      const created = await api.tasks.create(meeting.id, suggestions.map((task) => ({ title: task.title, description: task.description, assigneeId: task.suggestedAssigneeId })));
+      setTasks((prev) => [...created, ...prev]);
+    } catch (error) {
+      console.error('[AimLy] No se pudieron generar tareas.', error);
+      alert('AimLy no pudo generar tareas ahora mismo.');
+    } finally { setIsPreparingTasks(false); }
   };
 
   const handleAskAimLy = async () => {
@@ -190,11 +223,12 @@ export function AimLyPanel() {
       <div className="flex-1 overflow-y-auto p-3.5 custom-scrollbar bg-aimly-bg flex flex-col gap-3">
         {activeTab === 'Sala' && (
           <div className="flex flex-1 flex-col gap-3">
-            <div className="flex items-center gap-2 rounded-xl border border-aimly-orange/20 bg-aimly-orange/10 p-2 text-[11px] text-aimly-text"><Sparkles size={14} className="text-aimly-orange" /><span><strong>Conversación compartida.</strong> AimLy observa el contexto y puede analizarlo cuando lo necesiten.</span></div>
+            <div className="rounded-xl border border-aimly-orange/20 bg-aimly-orange/10 p-2 text-[11px] text-aimly-text"><div className="flex items-center gap-2"><Sparkles size={14} className="text-aimly-orange" /><span><strong>Conversación compartida.</strong> AimLy conoce este contexto y puede intervenir para facilitar.</span></div><button onClick={handleGroupIntervention} disabled={isSendingChat} className="mt-2 w-full rounded-lg bg-white px-2 py-1.5 text-[10px] font-bold text-aimly-orange shadow-sm disabled:opacity-50">{isSendingChat ? 'AimLy está pensando…' : 'Pedir intervención de AimLy'}</button></div>
             {messages.map((message: any) => {
-              const isMe = message.author_id === user?.id;
+              const isAimLy = message.content?.startsWith('🤖 AimLy:');
+              const isMe = message.author_id === user?.id && !isAimLy;
               const author = message.profiles?.name || (isMe ? 'Tú' : 'Participante');
-              return <div key={message.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}><span className="mb-0.5 px-1 text-[9px] font-semibold text-aimly-text/55">{isMe ? 'Tú' : author}</span><div className={`max-w-[92%] rounded-2xl p-2.5 text-xs leading-relaxed shadow-sm ${isMe ? 'rounded-tr-sm bg-aimly-orange text-white' : 'rounded-tl-sm border border-aimly-border bg-white text-aimly-text'}`}>{message.content}</div></div>;
+              return <div key={message.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}><span className="mb-0.5 px-1 text-[9px] font-semibold text-aimly-text/55">{isAimLy ? '🤖 AimLy · Facilitadora' : isMe ? 'Tú' : author}</span><div className={`max-w-[92%] rounded-2xl p-2.5 text-xs leading-relaxed shadow-sm ${isAimLy ? 'border border-aimly-orange/30 bg-[#FFF7EF] text-aimly-text' : isMe ? 'rounded-tr-sm bg-aimly-orange text-white' : 'rounded-tl-sm border border-aimly-border bg-white text-aimly-text'}`}>{message.content}</div></div>;
             })}
             {messages.length === 0 && <div className="py-10 text-center text-xs text-aimly-text/50">Inicien la conversación. AimLy usará estos mensajes como contexto.</div>}
             <div ref={chatEndRef} />
@@ -337,18 +371,8 @@ export function AimLyPanel() {
         {/* ── TAB 4: TAREAS ── */}
         {activeTab === 'Tareas' && (
           <div className="flex flex-col gap-3 animate-in fade-in">
-            {state === 'tasks_ready' ? (
-              demoTasks.map((t: any, i: number) => (
-                <Card key={i} className="p-3 bg-white">
-                  <h5 className="font-bold text-aimly-text text-xs mb-2">{t.title}</h5>
-                  <Badge variant="default" className="text-[9px]">{t.status}</Badge>
-                </Card>
-              ))
-            ) : (
-              <div className="text-center py-10 text-xs text-aimly-text/50">
-                Las tareas aparecerán aquí después de confirmar una decisión.
-              </div>
-            )}
+            <div className="rounded-xl border border-aimly-orange/20 bg-aimly-orange/10 p-2.5"><div className="flex items-center gap-2 text-[11px] text-aimly-text"><ListTodo size={14} className="text-aimly-orange" /><span><strong>Asignación asistida.</strong> AimLy analiza el chat, la pizarra y los participantes.</span></div><button onClick={handleGenerateTasks} disabled={isPreparingTasks} className="mt-2 w-full rounded-lg bg-aimly-orange py-2 text-[10px] font-bold text-white disabled:opacity-50">{isPreparingTasks ? 'Generando y asignando…' : 'Generar tareas con AimLy'}</button></div>
+            {tasks.length ? tasks.map((task) => <Card key={task.id} className="p-3 bg-white"><h5 className="font-bold text-aimly-text text-xs">{task.title}</h5>{task.description && <p className="mt-1 text-[11px] leading-relaxed text-aimly-text/60">{task.description}</p>}<div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-aimly-orange"><UserRound size={12} /> {task.profiles?.name || 'Sin asignar'}</div></Card>) : <div className="py-8 text-center text-xs text-aimly-text/50">Aún no hay tareas. Pide a AimLy que las proponga y las asigne.</div>}
           </div>
         )}
 

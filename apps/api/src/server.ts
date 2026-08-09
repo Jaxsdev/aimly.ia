@@ -689,6 +689,29 @@ server.post(
   }
 );
 
+// POST /api/meetings/:meetingId/group-facilitate — AimLy responds using the shared conversation
+server.post('/api/meetings/:meetingId/group-facilitate', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const [{ data: meeting }, { data: messages }, { data: cards }] = await Promise.all([
+    supabase.from('meetings').select('title, objective, expected_outcome').eq('id', meetingId).single(),
+    supabase.from('chat_messages').select('content').eq('meeting_id', meetingId).order('created_at', { ascending: true }).limit(30),
+    supabase.from('board_cards').select('text').eq('meeting_id', meetingId).limit(50)
+  ]);
+  if (!meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Reunión no encontrada' } });
+  try {
+    const text = await privateCopilotChat({
+      meeting: { title: meeting.title, objective: meeting.objective, expectedOutcome: meeting.expected_outcome },
+      userName: 'el equipo',
+      history: (messages || []).map((message: any) => ({ role: 'user' as const, content: message.content })),
+      prompt: 'Intervén como facilitadora en la conversación grupal. Resume brevemente el punto actual, detecta acuerdos o desacuerdos y propone el siguiente paso concreto. Esta respuesta será pública para todo el equipo.',
+      cards: cards || []
+    });
+    return reply.send({ success: true, data: { text } });
+  } catch (error: any) {
+    return reply.status(503).send({ success: false, error: { code: 'AI_UNAVAILABLE', message: 'AimLy no pudo intervenir ahora mismo.' } });
+  }
+});
+
 // ============================================================
 // VOTES
 // ============================================================
@@ -844,6 +867,35 @@ const createTasksSchema = z.object({
     assigneeId: z.string().uuid().optional(),
     sourceDecisionId: z.string().uuid().optional()
   }))
+});
+
+server.get('/api/meetings/:meetingId/tasks', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const { data, error } = await supabase.from('tasks').select('*, profiles:assignee_id(id, name)').eq('meeting_id', meetingId).order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return reply.send({ success: true, data: data || [] });
+});
+
+server.post('/api/meetings/:meetingId/task-suggestions', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const [{ data: meeting }, { data: participants }, { data: messages }, { data: cards }] = await Promise.all([
+    supabase.from('meetings').select('title, objective, expected_outcome').eq('id', meetingId).single(),
+    supabase.from('meeting_participants').select('user_id, profiles(id, name)').eq('meeting_id', meetingId),
+    supabase.from('chat_messages').select('content').eq('meeting_id', meetingId).order('created_at', { ascending: false }).limit(20),
+    supabase.from('board_cards').select('text').eq('meeting_id', meetingId).limit(40)
+  ]);
+  if (!meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Reunión no encontrada' } });
+  const context = [...(messages || []).map((m: any) => m.content), ...(cards || []).map((c: any) => c.text)].join('\n');
+  try {
+    const suggestions = await suggestTasks({
+      meeting: { title: meeting.title, objective: meeting.objective, expectedOutcome: meeting.expected_outcome },
+      decision: { text: `Acuerdos y material actual de la reunión:\n${context || 'Aún no hay aportes escritos.'}` },
+      participants: (participants || []).map((p: any) => ({ id: p.user_id, name: p.profiles?.name || 'Participante' }))
+    });
+    return reply.send({ success: true, data: suggestions.tasks });
+  } catch (error: any) {
+    return reply.status(503).send({ success: false, error: { code: 'AI_UNAVAILABLE', message: 'AimLy no pudo proponer tareas ahora mismo.' } });
+  }
 });
 
 // POST /api/meetings/:meetingId/tasks

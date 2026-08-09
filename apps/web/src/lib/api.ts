@@ -110,13 +110,16 @@ export const api = {
   },
 
   tasks: {
+    list: (meetingId: string) => apiRequest<any[]>('GET', `/api/meetings/${meetingId}/tasks`),
     create: (meetingId: string, tasks: Array<{ title: string; description?: string; assigneeId?: string; sourceDecisionId?: string }>) =>
-      apiRequest('POST', `/api/meetings/${meetingId}/tasks`, { tasks })
+      apiRequest<any[]>('POST', `/api/meetings/${meetingId}/tasks`, { tasks })
   },
 
   aimly: {
     analyze: (meetingId: string, excalidrawElements?: any[]) => apiRequest('POST', `/api/meetings/${meetingId}/analyze`, { excalidrawElements }),
     chat: (meetingId: string, prompt: string, history?: Array<{ role: 'user' | 'assistant'; content: string }>, excalidrawElements?: any[]) =>
-      apiRequest('POST', `/api/meetings/${meetingId}/ai-chat`, { prompt, history, excalidrawElements })
+      apiRequest('POST', `/api/meetings/${meetingId}/ai-chat`, { prompt, history, excalidrawElements }),
+    facilitateGroup: (meetingId: string) => apiRequest<{ text: string }>('POST', `/api/meetings/${meetingId}/group-facilitate`),
+    suggestTasks: (meetingId: string) => apiRequest<Array<{ title: string; description: string; suggestedAssigneeId?: string }>>('POST', `/api/meetings/${meetingId}/task-suggestions`)
   }
 };
