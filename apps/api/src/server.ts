@@ -11,18 +11,42 @@ import { z } from 'zod';
 import { verifyToken, supabase } from './lib/supabase.js';
 import { analyzeMeeting, suggestTasks, generateMeetingSummary, privateCopilotChat } from './ai/aimly.service.js';
 import { publishMeetingEvent } from './realtime/portal.server.js';
-import {
-  createMeetingSchema,
-  createCardSchema,
-  updateCardSchema,
-  createVoteSchema,
-  castVoteSchema,
-  type CreateMeetingInput,
-  type CreateCardInput,
-  type UpdateCardInput,
-  type CreateVoteInput,
-  type CastVoteInput
-} from '@aimly/shared';
+const createMeetingSchema = z.object({
+  title: z.string().min(1).max(200),
+  objective: z.string().min(1).max(2000),
+  expectedOutcome: z.string().min(1).max(2000),
+  durationMinutes: z.number().int().positive().default(30)
+});
+
+const createCardSchema = z.object({
+  text: z.string().min(1).max(1000),
+  type: z.enum(['idea', 'group']).default('idea'),
+  x: z.number().default(0),
+  y: z.number().default(0)
+});
+
+const updateCardSchema = z.object({
+  text: z.string().min(1).max(1000).optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  groupId: z.string().nullable().optional()
+});
+
+const createVoteSchema = z.object({
+  question: z.string().min(1).max(500),
+  options: z.array(z.string().min(1).max(200)).min(2).max(10),
+  criteria: z.array(z.string()).optional()
+});
+
+const castVoteSchema = z.object({
+  optionId: z.string()
+});
+
+type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
+type CreateCardInput = z.infer<typeof createCardSchema>;
+type UpdateCardInput = z.infer<typeof updateCardSchema>;
+type CreateVoteInput = z.infer<typeof createVoteSchema>;
+type CastVoteInput = z.infer<typeof castVoteSchema>;
 
 // ============================================================
 // Server setup
@@ -66,8 +90,10 @@ server.setErrorHandler((error, request, reply) => {
 });
 
 // ============================================================
-// Auth preHandler helper
-// ============================================================
+function isValidUUID(str?: string): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
 
 const guestUsersCache = new Map<string, string>();
 
@@ -621,7 +647,7 @@ server.post(
     if (error) throw new Error(error.message);
 
     // Insert options
-    const optionRows = input.options.map((label, idx) => ({
+    const optionRows = input.options.map((label: string, idx: number) => ({
       vote_id: vote.id,
       label,
       sort_order: idx
