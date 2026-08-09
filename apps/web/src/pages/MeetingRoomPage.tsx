@@ -153,6 +153,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
     localStream,
     screenStream,
     audioOn,
+    isSpeaking,
     videoOn,
     isScreenSharing,
     peers,
@@ -213,6 +214,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
       <CallControls
         isInCall={isInCall}
         audioOn={audioOn}
+        isSpeaking={isSpeaking}
         videoOn={videoOn}
         isScreenSharing={isScreenSharing}
         onJoinCall={joinCall}

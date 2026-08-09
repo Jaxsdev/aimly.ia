@@ -4,6 +4,7 @@ import { Mic, MicOff, MonitorUp, Phone, PhoneOff, Video, VideoOff } from 'lucide
 interface CallControlsProps {
   isInCall: boolean;
   audioOn: boolean;
+  isSpeaking: boolean;
   videoOn: boolean;
   isScreenSharing: boolean;
   onJoinCall: () => void;
@@ -14,7 +15,7 @@ interface CallControlsProps {
 }
 
 export function CallControls({
-  isInCall, audioOn, videoOn, isScreenSharing,
+  isInCall, audioOn, isSpeaking, videoOn, isScreenSharing,
   onJoinCall, onLeaveCall, onToggleAudio, onToggleVideo, onToggleScreenShare
 }: CallControlsProps) {
   if (!isInCall) {
@@ -34,7 +35,8 @@ export function CallControls({
   return (
     <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-gray-700 bg-gray-900/95 px-4 py-3 shadow-2xl backdrop-blur-md">
       <span className="hidden text-xs font-semibold text-gray-300 sm:inline">En llamada</span>
-      <button onClick={onToggleAudio} title={audioOn ? 'Silenciar micrófono' : 'Activar micrófono'} className={`flex h-11 w-11 items-center justify-center rounded-xl transition-all ${audioOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'border border-red-500/50 bg-red-500/20 text-red-400'}`}>
+      <button onClick={onToggleAudio} title={audioOn ? 'Silenciar micrófono' : 'Activar micrófono'} className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition-all ${audioOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'border border-red-500/50 bg-red-500/20 text-red-400'} ${audioOn && isSpeaking ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-gray-900' : ''}`}>
+        {audioOn && isSpeaking && <span className="absolute inset-0 animate-ping rounded-xl bg-emerald-400/30" />}
         {audioOn ? <Mic size={18} /> : <MicOff size={18} />}
       </button>
       <button onClick={onToggleVideo} title={videoOn ? 'Apagar cámara' : 'Encender cámara'} className={`flex h-11 w-11 items-center justify-center rounded-xl transition-all ${videoOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'border border-red-500/50 bg-red-500/20 text-red-400'}`}>
