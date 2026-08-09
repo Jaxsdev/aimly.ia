@@ -19,7 +19,7 @@ const COLOR_PALETTE = [
 ];
 
 export function Whiteboard() {
-  const { meeting, cards, createCard, updateCard, refreshMeeting, collaborators } = useMeeting();
+  const { meeting, cards, createCard, updateCard, refreshMeeting, collaborators, stickyCursors } = useMeeting();
   
   // View Mode: 'excalidraw' (Motor completo estilo Obsidian/Excalidraw) or 'stickyNotes' (Notas adhesivas)
   const [viewMode, setViewMode] = useState<BoardViewMode>('excalidraw');
@@ -236,6 +236,13 @@ export function Whiteboard() {
       {viewMode === 'stickyNotes' && (
         <div 
           className="w-full h-full relative overflow-hidden pt-12"
+          onPointerMove={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            (window as any).broadcastStickyCursor?.(
+              Math.round(event.clientX - rect.left),
+              Math.round(event.clientY - rect.top)
+            );
+          }}
           onClick={() => setSelectedCardId(null)}
           onDoubleClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
@@ -251,6 +258,19 @@ export function Whiteboard() {
             backgroundSize: '24px 24px',
           }}
         >
+          {Array.from(stickyCursors.entries()).map(([userId, cursor]) => (
+            <div
+              key={userId}
+              className="absolute z-40 pointer-events-none -translate-x-1 -translate-y-1"
+              style={{ left: cursor.x, top: cursor.y }}
+            >
+              <MousePointer2 size={18} className="fill-aimly-orange text-aimly-orange drop-shadow" />
+              <span className="ml-2 rounded bg-aimly-orange px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                {cursor.name}
+              </span>
+            </div>
+          ))}
+
           {/* Top Quick Create Button */}
           <div className="absolute top-16 right-4 z-20">
             <button

@@ -24,6 +24,7 @@ interface MeetingContextType {
   cards: any[];
   participants: Participant[];
   collaborators: Map<string, any>;
+  stickyCursors: Map<string, { x: number; y: number; name: string }>;
   loading: boolean;
   isConnected: boolean;
   sendMessage: (content: string) => Promise<void>;
@@ -45,6 +46,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const [cards, setCards] = useState<any[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [collaborators, setCollaborators] = useState<Map<string, any>>(new Map());
+  const [stickyCursors, setStickyCursors] = useState<Map<string, { x: number; y: number; name: string }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -52,6 +54,13 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
 
   // Keep a ref to the channel so we can clean it up
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const channelReadyRef = useRef(false);
+
+  const sendBroadcast = (event: string, payload: unknown) => {
+    if (!channelRef.current || !channelReadyRef.current) return;
+    channelRef.current.send({ type: 'broadcast', event, payload })
+      .catch((error) => console.warn(`[Realtime] No se pudo publicar ${event}.`, error));
+  };
 
   // ── Initial data fetch ──────────────────────────────────────
   const fetchAll = useCallback(async () => {
@@ -199,6 +208,25 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         }
       })
 
+      .on('broadcast', { event: 'board_card_created' }, ({ payload }) => {
+        if (!payload?.id) return;
+        setCards(prev => prev.some(card => card.id === payload.id) ? prev : [...prev, payload]);
+      })
+
+      .on('broadcast', { event: 'board_card_updated' }, ({ payload }) => {
+        if (!payload?.id) return;
+        setCards(prev => prev.map(card => card.id === payload.id ? { ...card, ...payload } : card));
+      })
+
+      .on('broadcast', { event: 'sticky_cursor' }, ({ payload }) => {
+        if (!payload?.userId || payload.userId === user.id) return;
+        setStickyCursors(prev => {
+          const next = new Map(prev);
+          next.set(payload.userId, { x: payload.x, y: payload.y, name: payload.name || 'Compañero' });
+          return next;
+        });
+      })
+
       // ── Ultra-Fast Delta WebSocket Drawing Broadcast (Canva/Figma speed) ────
       .on('broadcast', { event: 'excalidraw_delta' }, ({ payload }) => {
         if (payload?.deltas && Array.isArray(payload.deltas) && payload.deltas.length > 0) {
@@ -266,6 +294,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
 
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          channelReadyRef.current = true;
           setIsConnected(true);
           // Track presence: broadcast our own info
           await channel.track({
@@ -275,6 +304,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             joinedAt: new Date().toISOString()
           });
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          channelReadyRef.current = false;
           setIsConnected(false);
         }
       });
@@ -294,11 +324,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       }
 
       if (changedDeltas.length > 0) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'excalidraw_delta',
-          payload: { deltas: changedDeltas }
-        });
+        sendBroadcast('excalidraw_delta', { deltas: changedDeltas });
       }
     };
 
@@ -307,20 +333,28 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       if (now - ((window as any).lastPointerBroadcast || 0) > 50) { // 20fps throttled
         (window as any).lastPointerBroadcast = now;
         if (channelRef.current) {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'mouse_move',
-            payload: {
-              x: pointer.x,
-              y: pointer.y,
-              tool: pointer.tool || 'pointer',
-              button,
-              userId: user.id,
-              name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
-            }
+          sendBroadcast('mouse_move', {
+            x: pointer.x,
+            y: pointer.y,
+            tool: pointer.tool || 'pointer',
+            button,
+            userId: user.id,
+            name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
           });
         }
       }
+    };
+
+    (window as any).broadcastStickyCursor = (x: number, y: number) => {
+      const now = Date.now();
+      if (now - ((window as any).lastStickyCursorBroadcast || 0) < 50) return;
+      (window as any).lastStickyCursorBroadcast = now;
+      sendBroadcast('sticky_cursor', {
+        x,
+        y,
+        userId: user.id,
+        name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
+      });
     };
 
     (window as any).flushPendingDeltas = () => {
@@ -394,6 +428,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      channelReadyRef.current = false;
       setIsConnected(false);
     };
   }, [meetingId, user, authLoading, signInAnonymously, fetchAll]);
@@ -448,12 +483,15 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
 
     const newCard = await api.cards.create(meetingId, cardData) as any;
     setCards(prev => prev.map(c => c.id === tempCard.id ? newCard : c));
+    sendBroadcast('board_card_created', newCard);
   };
 
   const updateCard = async (cardId: string, updates: any) => {
     // Optimistic update
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updates } : c));
-    await api.cards.update(meetingId, cardId, updates);
+    const updatedCard = await api.cards.update(meetingId, cardId, updates) as any;
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updatedCard } : c));
+    sendBroadcast('board_card_updated', updatedCard);
   };
 
   return (
@@ -463,6 +501,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       cards,
       participants,
       collaborators,
+      stickyCursors,
       loading,
       isConnected,
       sendMessage,
