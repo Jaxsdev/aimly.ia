@@ -18,11 +18,20 @@ export function WaitingLobby() {
     try {
       const result = await api.meetings.startFacilitation(meeting.id);
       await refreshMeeting();
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const voice = new SpeechSynthesisUtterance(result.introduction);
-        voice.lang = 'es-ES'; voice.rate = 1; voice.pitch = 1;
-        window.speechSynthesis.speak(voice);
+      try {
+        const blob = await api.meetings.voice(meeting.id, result.introduction);
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        audio.onended = () => URL.revokeObjectURL(audioUrl);
+        await audio.play();
+      } catch (voiceError) {
+        console.warn('[AimLy] ElevenLabs no disponible; usando voz del navegador.', voiceError);
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const voice = new SpeechSynthesisUtterance(result.introduction);
+          voice.lang = 'es-ES'; voice.rate = 1; voice.pitch = 1;
+          window.speechSynthesis.speak(voice);
+        }
       }
     } catch (error) { alert(error instanceof Error ? error.message : 'No se pudo iniciar la reunión'); }
     finally { setStarting(false); }

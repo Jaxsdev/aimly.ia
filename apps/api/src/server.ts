@@ -560,6 +560,30 @@ server.post('/api/meetings/:meetingId/start-facilitation', { preHandler: require
   return reply.send({ success: true, data: { meeting: data, introduction, phases } });
 });
 
+// POST /api/meetings/:meetingId/voice — Proxy ElevenLabs so the API key remains private.
+server.post('/api/meetings/:meetingId/voice', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const { text } = request.body as { text?: string };
+  if (!text?.trim()) return reply.status(400).send({ success: false, error: { code: 'TEXT_REQUIRED', message: 'Se necesita texto para generar la voz' } });
+  const { data: participant } = await supabase.from('meeting_participants').select('id').eq('meeting_id', meetingId).eq('user_id', request.user.id).maybeSingle();
+  if (!participant) return reply.status(403).send({ success: false, error: { code: 'NOT_PARTICIPANT', message: 'No perteneces a esta reunión' } });
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const voiceId = process.env.ELEVENLABS_VOICE_ID;
+  if (!apiKey || !voiceId) return reply.status(503).send({ success: false, error: { code: 'VOICE_NOT_CONFIGURED', message: 'La voz de AimLy aún no está configurada' } });
+  const voiceResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    body: JSON.stringify({ text: text.slice(0, 4500), model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.25, use_speaker_boost: true } })
+  });
+  if (!voiceResponse.ok) {
+    const detail = await voiceResponse.text();
+    request.log.warn({ status: voiceResponse.status, detail }, '[ElevenLabs] Voice generation failed');
+    return reply.status(502).send({ success: false, error: { code: 'VOICE_PROVIDER_ERROR', message: 'No se pudo generar la voz de AimLy' } });
+  }
+  const audio = Buffer.from(await voiceResponse.arrayBuffer());
+  return reply.header('Content-Type', 'audio/mpeg').header('Cache-Control', 'no-store').send(audio);
+});
+
 server.put(
   '/api/meetings/:meetingId/excalidraw-scene',
   { preHandler: requireAuth, schema: { body: saveExcalidrawSceneSchema } },

@@ -47,6 +47,15 @@ async function apiRequest<T>(
   return json.data;
 }
 
+async function apiAudio(path: string, body: unknown): Promise<Blob> {
+  const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: await authHeaders(true), body: JSON.stringify(body) });
+  if (!res.ok) {
+    const json = await res.json().catch(() => null);
+    throw new Error(json?.error?.message || 'No se pudo generar el audio');
+  }
+  return res.blob();
+}
+
 // ============================================================
 // Meetings
 // ============================================================
@@ -70,6 +79,8 @@ export const api = {
 
     startFacilitation: (meetingId: string) =>
       apiRequest<{ meeting: any; introduction: string; phases: any[] }>('POST', `/api/meetings/${meetingId}/start-facilitation`),
+
+    voice: (meetingId: string, text: string) => apiAudio(`/api/meetings/${meetingId}/voice`, { text }),
 
     join: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/join`),
 
