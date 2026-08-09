@@ -5,6 +5,10 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@aimly/shared": ["../../packages/shared/src/index.ts"]
+    },
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": ["vite/client"]
