@@ -1,12 +1,29 @@
 import { getAccessToken } from '../lib/supabase.js';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getAccessToken();
+function isValidUUID(str?: string): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+async function authHeaders(hasBody: boolean): Promise<Record<string, string>> {
+  const token = await getAccessToken().catch(() => null);
+  let guestId = '';
+  let guestName = '';
+  try {
+    const raw = localStorage.getItem('aimly_guest_user');
+    if (raw) {
+      const g = JSON.parse(raw);
+      guestId = g.id || '';
+      guestName = g.name || '';
+    }
+  } catch (e) {}
+
   return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+    Authorization: token ? `Bearer ${token}` : 'Bearer guest_token',
+    ...(guestId ? { 'X-Guest-Id': guestId, 'X-Guest-Name': guestName } : {})
   };
 }
 
@@ -15,11 +32,12 @@ async function apiRequest<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
-  const headers = await authHeaders();
+  const hasBody = body !== undefined || method === 'POST' || method === 'PUT' || method === 'PATCH';
+  const headers = await authHeaders(hasBody);
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined
+    body: hasBody ? JSON.stringify(body ?? {}) : undefined
   });
 
   const json = await res.json();
@@ -51,6 +69,7 @@ export const api = {
 
   messages: {
     list: (meetingId: string) => apiRequest('GET', `/api/meetings/${meetingId}/messages`),
+    get: (meetingId: string) => apiRequest('GET', `/api/meetings/${meetingId}/messages`),
     create: (meetingId: string, content: string) =>
       apiRequest('POST', `/api/meetings/${meetingId}/messages`, { content })
   },
@@ -84,5 +103,11 @@ export const api = {
   tasks: {
     create: (meetingId: string, tasks: Array<{ title: string; description?: string; assigneeId?: string; sourceDecisionId?: string }>) =>
       apiRequest('POST', `/api/meetings/${meetingId}/tasks`, { tasks })
+  },
+
+  aimly: {
+    analyze: (meetingId: string, excalidrawElements?: any[]) => apiRequest('POST', `/api/meetings/${meetingId}/analyze`, { excalidrawElements }),
+    chat: (meetingId: string, prompt: string, history?: Array<{ role: 'user' | 'assistant'; content: string }>, excalidrawElements?: any[]) =>
+      apiRequest('POST', `/api/meetings/${meetingId}/ai-chat`, { prompt, history, excalidrawElements })
   }
 };

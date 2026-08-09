@@ -9,7 +9,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { verifyToken, supabase } from './lib/supabase.js';
-import { analyzeMeeting, suggestTasks, generateMeetingSummary } from './ai/aimly.service.js';
+import { analyzeMeeting, suggestTasks, generateMeetingSummary, privateCopilotChat } from './ai/aimly.service.js';
 import { publishMeetingEvent } from './realtime/portal.server.js';
 import {
   createMeetingSchema,
@@ -69,15 +69,74 @@ server.setErrorHandler((error, request, reply) => {
 // Auth preHandler helper
 // ============================================================
 
+const guestUsersCache = new Map<string, string>();
+
+async function ensureGuestUserExists(guestIdHeader?: string, guestName: string = 'Invitado'): Promise<{ id: string; name: string }> {
+  const targetId = isValidUUID(guestIdHeader) ? guestIdHeader! : null;
+  if (targetId && guestUsersCache.has(targetId)) {
+    return { id: targetId, name: guestName };
+  }
+
+  if (targetId) {
+    const { data: existingProf } = await supabase.from('profiles').select('id, name').eq('id', targetId).single();
+    if (existingProf) {
+      guestUsersCache.set(targetId, existingProf.id);
+      return { id: existingProf.id, name: existingProf.name || guestName };
+    }
+  }
+
+  // Create real user in auth.users using admin client so foreign key references auth.users(id) pass 100%
+  const cleanId = targetId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Math.random().toString(16).substring(2, 14).padStart(12, '0'));
+  const guestEmail = `guest_${cleanId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}_${Date.now()}@aimly.local`;
+
+  const { data: newUser } = await supabase.auth.admin.createUser({
+    id: cleanId,
+    email: guestEmail,
+    password: 'GuestPassword123!',
+    email_confirm: true,
+    user_metadata: { full_name: guestName }
+  }).catch(() => ({ data: null })) as any;
+
+  const finalUserId = newUser?.user?.id || cleanId;
+
+  try {
+    await supabase.from('profiles').upsert({
+      id: finalUserId,
+      name: guestName,
+      avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${finalUserId}`
+    });
+  } catch (e) {}
+
+  guestUsersCache.set(finalUserId, finalUserId);
+  return { id: finalUserId, name: guestName };
+}
+
 async function requireAuth(request: any, reply: any) {
   const authHeader = request.headers.authorization as string | undefined;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing token' } });
+  const guestIdHeader = request.headers['x-guest-id'] as string | undefined;
+  const guestName = (request.headers['x-guest-name'] as string | undefined) || 'Invitado';
+
+  if (!authHeader?.startsWith('Bearer ') || authHeader === 'Bearer guest_token') {
+    const guestUser = await ensureGuestUserExists(guestIdHeader, guestName);
+    request.user = {
+      id: guestUser.id,
+      email: `${guestUser.id}@aimly.local`,
+      name: guestUser.name,
+      user_metadata: { full_name: guestUser.name }
+    };
+    return;
   }
   const token = authHeader.slice(7);
-  const user = await verifyToken(token);
+  const user = await verifyToken(token).catch(() => null);
   if (!user) {
-    return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid token' } });
+    const guestUser = await ensureGuestUserExists(guestIdHeader, guestName);
+    request.user = {
+      id: guestUser.id,
+      email: `${guestUser.id}@aimly.local`,
+      name: guestUser.name,
+      user_metadata: { full_name: guestUser.name }
+    };
+    return;
   }
   request.user = user;
 }
@@ -133,7 +192,7 @@ server.get('/api/meetings', { preHandler: requireAuth }, async (request: any, re
     .from('meeting_participants')
     .select('meeting_id, meetings(*)')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .order('joined_at', { ascending: false });
 
   if (error) throw new Error(error.message);
   const meetings = (data || []).map((row: any) => row.meetings);
@@ -178,6 +237,18 @@ server.post(
       return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Meeting not found' } });
     }
 
+    // Ensure profile exists in profiles table so Foreign Key constraint (user_id -> profiles.id) passes
+    const userName = request.user.user_metadata?.full_name || request.user.name || request.user.email?.split('@')[0] || 'Invitado';
+    try {
+      await supabase.from('profiles').upsert({
+        id: userId,
+        name: userName,
+        avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`
+      });
+    } catch (err) {
+      console.warn('[server.ts] Profile upsert warning:', err);
+    }
+
     // Upsert participant
     const { data: participant, error } = await supabase
       .from('meeting_participants')
@@ -185,7 +256,9 @@ server.post(
       .select()
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error('[server.ts] POST /join participant error:', error);
+    }
 
     // Fetch profile for realtime event
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
@@ -208,12 +281,30 @@ server.get(
     const { meetingId } = request.params as { meetingId: string };
     const { data, error } = await supabase
       .from('chat_messages')
-      .select('*, profiles(id, name, avatar_url)')
+      .select('*')
       .eq('meeting_id', meetingId)
       .order('created_at', { ascending: true });
 
-    if (error) throw new Error(error.message);
-    return reply.send({ success: true, data: data || [] });
+    if (error) {
+      console.error('[server.ts] GET /messages error:', error);
+      return reply.send({ success: true, data: [] });
+    }
+
+    // Fetch profiles for all unique author_ids
+    const authorIds = Array.from(new Set((data || []).map(m => m.author_id)));
+    let profilesMap: Record<string, any> = {};
+    if (authorIds.length > 0) {
+      const { data: profs } = await supabase.from('profiles').select('id, name, avatar_url').in('id', authorIds);
+      if (profs) {
+        profs.forEach((p: any) => { profilesMap[p.id] = p; });
+      }
+    }
+
+    const formatted = (data || []).map((m: any) => ({
+      ...m,
+      profiles: profilesMap[m.author_id] || { id: m.author_id, name: 'Usuario', avatar_url: null }
+    }));
+    return reply.send({ success: true, data: formatted });
   }
 );
 
@@ -228,16 +319,41 @@ server.post(
     const { content } = request.body as z.infer<typeof createMessageSchema>;
     const authorId = request.user.id;
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, name, avatar_url')
+      .eq('id', authorId)
+      .single();
+
+    const fallbackName = request.user.user_metadata?.full_name || request.user.name || request.user.email?.split('@')[0] || 'Usuario';
+    const profileObj = profile || { id: authorId, name: fallbackName, avatar_url: request.user.user_metadata?.avatar_url || null };
+
+    // Ensure author exists in profiles table so Foreign Key constraint (author_id -> profiles.id) passes
+    try {
+      await supabase.from('profiles').upsert({
+        id: authorId,
+        name: profileObj.name,
+        avatar_url: profileObj.avatar_url
+      });
+    } catch (err) {
+      console.warn('[server.ts] Message author profile upsert warning:', err);
+    }
+
     const { data, error } = await supabase
       .from('chat_messages')
       .insert({ meeting_id: meetingId, author_id: authorId, content })
-      .select('*, profiles(id, name, avatar_url)')
+      .select('*')
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error('[server.ts] Error inserting chat_message:', error);
+      throw new Error(error.message);
+    }
 
-    await publishMeetingEvent(meetingId, 'chat_message_created', data);
-    return reply.status(201).send({ success: true, data });
+    const fullMessage = { ...data, profiles: profileObj };
+
+    await publishMeetingEvent(meetingId, 'chat_message_created', fullMessage);
+    return reply.status(201).send({ success: true, data: fullMessage });
   }
 );
 
@@ -355,6 +471,8 @@ server.post(
     const now = new Date();
     const startedAt = meeting.started_at ? new Date(meeting.started_at) : now;
     const elapsedMinutes = (now.getTime() - startedAt.getTime()) / 60000;
+    const { excalidrawElements } = (request.body as { excalidrawElements?: any[] }) || {};
+
     const timeRemaining = Math.max(0, meeting.duration_minutes - elapsedMinutes);
 
     const ctx = {
@@ -383,7 +501,8 @@ server.post(
       boardGroups: (groups || []).map((g: any) => ({ id: g.id, title: g.title })),
       currentVote: null,
       decisions: (decisions || []).map((d: any) => ({ text: d.text })),
-      tasks: (tasks || []).map((t: any) => ({ title: t.title, assigneeId: t.assignee_id }))
+      tasks: (tasks || []).map((t: any) => ({ title: t.title, assigneeId: t.assignee_id })),
+      excalidrawElements: excalidrawElements || []
     };
 
     try {
@@ -431,6 +550,50 @@ server.post(
       return reply.status(503).send({
         success: false,
         error: { code: 'AI_UNAVAILABLE', message: 'AimLy could not analyze the meeting. Please try again.' }
+      });
+    }
+  }
+);
+
+// POST /api/meetings/:meetingId/ai-chat — Private 1-on-1 discussion with AimLy
+server.post(
+  '/api/meetings/:meetingId/ai-chat',
+  { preHandler: requireAuth },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const { prompt, history, excalidrawElements } = request.body as { prompt: string; history?: Array<{ role: 'user' | 'assistant'; content: string }>; excalidrawElements?: any[] };
+    const userId = request.user.id;
+
+    const [{ data: meeting }, { data: profile }, { data: cards }] = await Promise.all([
+      supabase.from('meetings').select('title, objective, expected_outcome').eq('id', meetingId).single(),
+      supabase.from('profiles').select('name').eq('id', userId).single(),
+      supabase.from('board_cards').select('text').eq('meeting_id', meetingId)
+    ]);
+
+    if (!meeting) {
+      return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Meeting not found' } });
+    }
+
+    try {
+      const responseText = await privateCopilotChat({
+        meeting: {
+          title: meeting.title,
+          objective: meeting.objective,
+          expectedOutcome: meeting.expected_outcome
+        },
+        userName: profile?.name || 'Usuario',
+        history: history || [],
+        prompt: prompt || '',
+        cards: cards || [],
+        excalidrawElements: excalidrawElements || []
+      });
+
+      return reply.send({ success: true, data: { text: responseText } });
+    } catch (err: any) {
+      console.error('[Claude] privateCopilotChat failed:', err);
+      return reply.status(503).send({
+        success: false,
+        error: { code: 'AI_UNAVAILABLE', message: 'No se pudo conectar con AimLy. Inténtalo de nuevo.' }
       });
     }
   }
