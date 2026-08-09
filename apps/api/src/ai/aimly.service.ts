@@ -55,26 +55,19 @@ const SYSTEM_PROMPT = `You are AimLy, an AI meeting facilitator.
 
 Your purpose is to help a team reach the expected outcome of its meeting.
 
-You are NOT a generic chatbot. Do not react to every individual message.
-Observe the entire state of the meeting and intervene only when doing so can help the group move forward.
+IMPORTANT: Always respond in SPANISH (español).
 
-You understand:
-- the meeting objective and expected outcome
-- the participants
-- the conversation
-- the shared board (cards and groups)
-- current votes
-- confirmed decisions
-- tasks
-- remaining time
+You are NOT a generic chatbot. Do not react with canned responses.
+Analyze the provided meeting title, objective, expected outcome, chat messages, and board cards carefully.
+Your observations, summaries, questions, and proposed votes MUST directly relate to the meeting's topic and cards.
 
 Your responsibilities are:
 1. Identify the main ideas from the board.
 2. Identify ideas that can be grouped.
-3. Detect unresolved disagreements.
+3. Detect unresolved disagreements or missing decisions.
 4. Detect when the team is drifting from the objective.
 5. Detect when a decision is required.
-6. Suggest one useful next action.
+6. Suggest one useful next action in Spanish.
 
 Possible recommendations include:
 - organize ideas (groups)
@@ -83,8 +76,8 @@ Possible recommendations include:
 - none (when no action is needed)
 
 Important rules:
+- All text strings (summary, observations, messages, questions, options) MUST BE IN SPANISH.
 - Never confirm a decision yourself.
-- Never permanently assign a responsibility yourself.
 - Never execute SQL, never interact directly with the database.
 - Important actions require human confirmation.
 
@@ -109,10 +102,19 @@ interface MeetingContext {
   currentVote: any | null;
   decisions: Array<{ text: string }>;
   tasks: Array<{ title: string; assigneeId: string | null }>;
+  excalidrawElements?: any[];
 }
 
 export async function analyzeMeeting(ctx: MeetingContext): Promise<AimLyAnalysis> {
-  const userMessage = `Here is the current state of the meeting:\n\n${JSON.stringify(ctx, null, 2)}\n\nReturn a JSON object matching this schema exactly:\n{\n  "summary": string,\n  "observations": string[],\n  "groups": Array<{ "title": string, "cardIds": string[] }>,\n  "suggestedAction": { "type": "none" } | { "type": "ask_question", "message": string } | { "type": "propose_vote", "message": string, "question": string, "options": string[], "criteria"?: string[] }\n}`;
+  let excalidrawSummary = '';
+  if (ctx.excalidrawElements && ctx.excalidrawElements.length > 0) {
+    const active = ctx.excalidrawElements.filter((el: any) => !el.isDeleted);
+    const texts = active.filter((el: any) => el.type === 'text' && el.text?.trim()).map((el: any) => `- Texto anotado en Excalidraw: "${el.text.trim()}"`);
+    const shapes = active.filter((el: any) => el.type !== 'text').map((el: any) => `- Dibujo/Forma en Excalidraw: ${el.type}`);
+    excalidrawSummary = [...texts, ...shapes].join('\n');
+  }
+
+  const userMessage = `Here is the current state of the meeting:\n\n${JSON.stringify(ctx, null, 2)}\n\nExcalidraw Whiteboard Canvas Content:\n${excalidrawSummary || '(Sin elementos en la pizarra Excalidraw)'}\n\nReturn a JSON object matching this schema exactly:\n{\n  "summary": string,\n  "observations": string[],\n  "groups": Array<{ "title": string, "cardIds": string[] }>,\n  "suggestedAction": { "type": "none" } | { "type": "ask_question", "message": string } | { "type": "propose_vote", "message": string, "question": string, "options": string[], "criteria"?: string[] }\n}`;
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
@@ -196,4 +198,58 @@ export async function generateMeetingSummary(ctx: SummaryContext): Promise<Meeti
   
   const parsed = JSON.parse(jsonText);
   return MeetingSummarySchema.parse(parsed);
+}
+
+// ============================================================
+// privateCopilotChat
+// ============================================================
+
+interface CopilotChatContext {
+  meeting: {
+    title: string;
+    objective: string;
+    expectedOutcome: string;
+  };
+  userName: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  prompt: string;
+  cards?: Array<{ text: string }>;
+  excalidrawElements?: any[];
+}
+
+export async function privateCopilotChat(ctx: CopilotChatContext): Promise<string> {
+  let excalidrawDetails = '';
+  if (ctx.excalidrawElements && ctx.excalidrawElements.length > 0) {
+    const active = ctx.excalidrawElements.filter((el: any) => !el.isDeleted);
+    const texts = active.filter((el: any) => el.type === 'text' && el.text?.trim()).map((el: any) => `- Texto anotado en lienzo: "${el.text.trim()}"`);
+    const shapes = active.filter((el: any) => el.type !== 'text').map((el: any) => `- Dibujo/Forma en lienzo: ${el.type}`);
+    excalidrawDetails = [...texts, ...shapes].join('\n');
+  }
+
+  const systemPrompt = `You are AimLy, a personal AI copilot during a meeting.
+You are having a PRIVATE 1-on-1 discussion with ${ctx.userName}.
+IMPORTANT: Always respond in SPANISH (español).
+You HAVE full, direct vision of the Excalidraw whiteboard canvas and all its elements, shapes, drawings, and texts. NEVER say you cannot see the Excalidraw whiteboard. Confirm confidently what is drawn/written on the Excalidraw canvas.
+
+Meeting context:
+- Title: ${ctx.meeting.title}
+- Objective: ${ctx.meeting.objective}
+- Expected Outcome: ${ctx.meeting.expectedOutcome}
+
+Lienzo Excalidraw Actual:
+${excalidrawDetails || '(Sin elementos o dibujos en el lienzo aún)'}`;
+
+  const formattedMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    ...ctx.history.slice(-6).map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: ctx.prompt }
+  ];
+
+  const response = await anthropic.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages: formattedMessages
+  });
+
+  return response.content[0].type === 'text' ? response.content[0].text : '';
 }
