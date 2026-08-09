@@ -53,15 +53,14 @@ export function MeetingHeader({ onFinish }: { onFinish: () => void }) {
         {/* Participant avatars from Presence */}
         <div className="hidden sm:flex items-center -space-x-2">
           {participants.slice(0, 4).map((p, i) => (
-            <Avatar
-              key={p.userId}
-              alt={p.name}
-              src={p.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.userId}`}
-              size="md"
-              className="border-2 border-aimly-bg relative shadow-sm"
-              style={{ zIndex: 10 - i }}
-              title={p.name}
-            />
+            <div key={p.userId} style={{ zIndex: 10 - i }}>
+              <Avatar
+                alt={p.name}
+                src={p.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.userId}`}
+                size="md"
+                className="border-2 border-aimly-bg relative shadow-sm"
+              />
+            </div>
           ))}
           {participants.length > 4 && (
             <div className="w-8 h-8 rounded-full bg-aimly-border border-2 border-aimly-bg flex items-center justify-center text-xs font-bold text-aimly-text/70">

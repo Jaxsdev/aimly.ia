@@ -66,11 +66,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (res.data?.user) {
         setUser(res.data.user);
-        await supabase.from('profiles').upsert({
-          id: res.data.user.id,
-          name: name,
-          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${res.data.user.id}`
-        }).catch(console.warn);
+        try {
+          await supabase.from('profiles').upsert({
+            id: res.data.user.id,
+            name: name,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${res.data.user.id}`
+          });
+        } catch (e) {}
       } else {
         // Fallback user with valid PostgreSQL UUID format
         const guestId = generateUUID();
@@ -110,11 +112,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       if (data.user) {
         setUser(data.user);
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          name: name,
-          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.user.id}`
-        }).catch(console.warn);
+        try {
+          await supabase.from('profiles').upsert({
+            id: data.user.id,
+            name: name,
+            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.user.id}`
+          });
+        } catch (e) {}
       }
     } catch (error) {
       console.error('Error signing up:', error);

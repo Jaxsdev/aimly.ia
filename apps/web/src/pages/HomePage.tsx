@@ -18,7 +18,7 @@ export default function HomePage() {
     async function fetchMeetings() {
       try {
         const data = await api.meetings.list();
-        setMeetings(data);
+        setMeetings(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error('Error fetching meetings:', error);
       } finally {

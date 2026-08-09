@@ -26,7 +26,7 @@ export default function CreateMeetingPage() {
         expectedOutcome: formData.expectedOutcome,
         durationMinutes: Number(formData.durationMinutes)
       });
-      navigate(`/meeting/${meeting.id}`);
+      navigate(`/meeting/${(meeting as any).id}`);
     } catch (error) {
       console.error('Error creating meeting:', error);
       alert('Error al crear la reunión');
