@@ -95,7 +95,7 @@ export default function MeetingResultPage() {
               </div>
               
               <div className="flex flex-col gap-3">
-                {demoTasks.map((task, i) => (
+                {demoTasks.map((task: any, i: number) => (
                   <div key={i} className="flex items-start md:items-center justify-between p-4 rounded-xl border border-aimly-border bg-aimly-bg/50 hover:bg-aimly-bg transition-colors gap-4">
                     <div className="flex items-start gap-3 flex-1">
                       <div className="mt-1 w-4 h-4 rounded border-2 border-aimly-text/30 flex-shrink-0"></div>
@@ -142,7 +142,7 @@ export default function MeetingResultPage() {
             <Card className="p-6 shadow-sm">
               <h3 className="font-bold text-aimly-text mb-4">Participantes ({demoParticipants.length})</h3>
               <div className="flex flex-col gap-3">
-                {demoParticipants.map((p) => (
+                {demoParticipants.map((p: any) => (
                   <div key={p.id} className="flex items-center gap-3">
                     <Avatar src={`https://i.pravatar.cc/150?u=${p.id}`} alt={p.name} size="md" />
                     <div className="flex flex-col">

@@ -316,7 +316,7 @@ export function AimLyPanel() {
         {activeTab === 'Tareas' && (
           <div className="flex flex-col gap-3 animate-in fade-in">
             {state === 'tasks_ready' ? (
-              demoTasks.map((t, i) => (
+              demoTasks.map((t: any, i: number) => (
                 <Card key={i} className="p-3 bg-white">
                   <h5 className="font-bold text-aimly-text text-xs mb-2">{t.title}</h5>
                   <Badge variant="default" className="text-[9px]">{t.status}</Badge>
