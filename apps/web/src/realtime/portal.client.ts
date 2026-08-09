@@ -1,61 +1,53 @@
 import { Portal } from '@portalsdk/core';
 import type { MeetingRealtimeEvent } from '@aimly/shared';
 
-// ============================================================
-// Singleton Portal client
-// ============================================================
-
 let portalInstance: Portal | null = null;
 
 export function getPortalClient(): Portal {
   if (!portalInstance) {
-    const apiKey = import.meta.env.VITE_PORTAL_PUBLIC_KEY as string;
-    portalInstance = new Portal({ apiKey: apiKey || '' });
+    const apiKey = (import.meta.env.VITE_PORTAL_PUBLIC_KEY as string) || '';
+    portalInstance = new Portal({ apiKey });
   }
   return portalInstance;
 }
 
-/**
- * Channel name convention: room:{meetingId}
- */
 export function roomChannel(meetingId: string): string {
   return `room:${meetingId}`;
 }
 
 /**
- * Subscribe to a meeting channel and receive typed events.
- * Returns an unsubscribe function.
+ * Subscribe to a meeting channel in Portal and receive typed events.
  */
 export function subscribeToMeeting(
   meetingId: string,
   onEvent: (event: MeetingRealtimeEvent) => void
 ): () => void {
   const portal = getPortalClient();
-  const channel = roomChannel(meetingId);
-  
-  // Portal channel subscription — adapter layer hides the SDK details
-  const unsubscribe = (portal as any).subscribe?.(channel, (message: any) => {
+  const channelName = roomChannel(meetingId);
+  const channel = portal.channel<MeetingRealtimeEvent>(channelName);
+
+  channel.acquire();
+
+  const unsubscribe = channel.on('message', (msg: any) => {
     try {
-      const event = message as MeetingRealtimeEvent;
-      onEvent(event);
+      if (msg?.content) {
+        onEvent(msg.content as MeetingRealtimeEvent);
+      }
     } catch (err) {
-      console.error('[Portal] Failed to parse event:', err);
+      console.error('[Portal Client] Failed to handle message:', err);
     }
   });
 
-  return typeof unsubscribe === 'function' ? unsubscribe : () => {};
+  return () => {
+    unsubscribe();
+    channel.release();
+  };
 }
 
-export function connectToMeeting(meetingId: string): void {
+export function sendPortalEvent(meetingId: string, event: MeetingRealtimeEvent): void {
   const portal = getPortalClient();
-  if (typeof (portal as any).connect === 'function') {
-    (portal as any).connect(roomChannel(meetingId));
-  }
-}
-
-export function disconnectFromMeeting(meetingId: string): void {
-  const portal = getPortalClient();
-  if (typeof (portal as any).disconnect === 'function') {
-    (portal as any).disconnect(roomChannel(meetingId));
-  }
+  const channelName = roomChannel(meetingId);
+  const channel = portal.channel(channelName);
+  channel.acquire();
+  channel.send({ content: event }).finally(() => channel.release());
 }
