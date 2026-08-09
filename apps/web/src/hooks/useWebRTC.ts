@@ -26,12 +26,19 @@ export function useWebRTC(meetingId: string) {
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   const localStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<any>(null);
+  const pendingIceCandidates = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined;
+  const turnUsername = import.meta.env.VITE_TURN_USERNAME as string | undefined;
+  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
 
   const iceServers: RTCConfiguration = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' }
+      { urls: 'stun:stun2.l.google.com:19302' },
+      ...(turnUrl && turnUsername && turnCredential
+        ? [{ urls: turnUrl, username: turnUsername, credential: turnCredential }]
+        : [])
     ]
   };
 
@@ -44,6 +51,12 @@ export function useWebRTC(meetingId: string) {
     const pc = new RTCPeerConnection(iceServers);
     peerConnections.current[remoteUserId] = pc;
 
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.warn(`[Llamada] Conexión con ${remoteName} en estado ${pc.connectionState}.`);
+      }
+    };
+
     // Add local tracks to peer connection
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
@@ -53,7 +66,7 @@ export function useWebRTC(meetingId: string) {
 
     // Handle remote tracks
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
+      const remoteStream = event.streams[0] || new MediaStream([event.track]);
       setPeers(prev => ({
         ...prev,
         [remoteUserId]: {
@@ -79,7 +92,7 @@ export function useWebRTC(meetingId: string) {
             senderId: user?.id,
             candidate: event.candidate
           }
-        });
+        }).catch((error: unknown) => console.warn('[Llamada] No se pudo enviar candidato ICE.', error));
       }
     };
 
@@ -123,6 +136,11 @@ export function useWebRTC(meetingId: string) {
 
         const pc = createPeerConnection(senderId, senderName);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const queuedCandidates = pendingIceCandidates.current[senderId] || [];
+        for (const candidate of queuedCandidates) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.warn);
+        }
+        delete pendingIceCandidates.current[senderId];
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -134,7 +152,7 @@ export function useWebRTC(meetingId: string) {
             senderId: user.id,
             answer
           }
-        });
+        }).catch((error: unknown) => console.warn('[Llamada] No se pudo enviar respuesta.', error));
       })
       .on('broadcast', { event: 'webrtc-answer' }, async ({ payload }) => {
         const { targetId, senderId, answer } = payload;
@@ -151,7 +169,11 @@ export function useWebRTC(meetingId: string) {
 
         const pc = peerConnections.current[senderId];
         if (pc) {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.warn);
+          if (pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.warn);
+          } else {
+            (pendingIceCandidates.current[senderId] ||= []).push(candidate);
+          }
         }
       })
       .on('broadcast', { event: 'webrtc-media-toggle' }, ({ payload }) => {
@@ -190,7 +212,7 @@ export function useWebRTC(meetingId: string) {
               senderId: user.id,
               senderName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Participante'
             }
-          });
+          }).catch((error: unknown) => console.warn('[Llamada] No se pudo enviar oferta.', error));
         }
       });
 
@@ -200,7 +222,7 @@ export function useWebRTC(meetingId: string) {
           type: 'broadcast',
           event: 'webrtc-leave',
           payload: { senderId: user.id }
-        });
+        }).catch(() => undefined);
         supabase.removeChannel(channelRef.current);
       }
     };

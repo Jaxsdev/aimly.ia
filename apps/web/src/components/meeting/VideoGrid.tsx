@@ -57,6 +57,25 @@ function VideoTile({ name, avatarUrl, stream, audioOn, videoOn, isSelf = false, 
   );
 }
 
+function RemoteAudio({ stream }: { stream?: MediaStream }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (!audioRef.current || !stream) return;
+    audioRef.current.srcObject = stream;
+    audioRef.current.play().catch((error) => {
+      console.warn('[Llamada] El navegador bloqueó la reproducción automática de audio.', error);
+    });
+  }, [stream]);
+
+  return <audio ref={audioRef} autoPlay playsInline />;
+}
+
+/** Keeps remote audio playing even while the participant is looking at the board. */
+export function CallAudio({ peers }: { peers: Record<string, PeerState> }) {
+  return <>{Object.values(peers).map((peer) => <RemoteAudio key={peer.userId} stream={peer.stream} />)}</>;
+}
+
 interface VideoGridProps {
   localStream: MediaStream | null;
   screenStream: MediaStream | null;

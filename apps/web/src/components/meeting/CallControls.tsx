@@ -1,4 +1,5 @@
 import React from 'react';
+import { Mic, MicOff, MonitorUp, Phone, PhoneOff, Video, VideoOff } from 'lucide-react';
 
 interface CallControlsProps {
   isInCall: boolean;
@@ -13,87 +14,38 @@ interface CallControlsProps {
 }
 
 export function CallControls({
-  isInCall,
-  audioOn,
-  videoOn,
-  isScreenSharing,
-  onJoinCall,
-  onLeaveCall,
-  onToggleAudio,
-  onToggleVideo,
-  onToggleScreenShare
+  isInCall, audioOn, videoOn, isScreenSharing,
+  onJoinCall, onLeaveCall, onToggleAudio, onToggleVideo, onToggleScreenShare
 }: CallControlsProps) {
   if (!isInCall) {
     return (
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-aimly-surface/90 backdrop-blur-md border border-aimly-border px-5 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4">
+      <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-2xl border border-aimly-border bg-aimly-surface/95 px-4 py-3 shadow-2xl backdrop-blur-md">
         <div className="flex items-center gap-2 text-xs font-semibold text-aimly-text">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-          </span>
+          <span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" /></span>
           Llamada disponible
         </div>
-        <button
-          onClick={onJoinCall}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2 rounded-full shadow-lg transition-all flex items-center gap-2"
-        >
-          <span>📞</span>
-          <span>Unirme a la Videollamada</span>
+        <button onClick={onJoinCall} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-lg transition-all hover:bg-emerald-500">
+          <Phone size={16} /> Unirme a la llamada
         </button>
       </div>
     );
   }
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gray-900/95 backdrop-blur-md border border-gray-800 px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 transition-all">
-      {/* Microphone Toggle */}
-      <button
-        onClick={onToggleAudio}
-        title={audioOn ? 'Silenciar Micrófono' : 'Activar Micrófono'}
-        className={`w-11 h-11 rounded-full flex items-center justify-center text-lg transition-all ${
-          audioOn
-            ? 'bg-gray-800 hover:bg-gray-700 text-white'
-            : 'bg-red-500/20 text-red-400 border border-red-500/50'
-        }`}
-      >
-        {audioOn ? '🎙️' : '🎙️❌'}
+    <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-gray-700 bg-gray-900/95 px-4 py-3 shadow-2xl backdrop-blur-md">
+      <span className="hidden text-xs font-semibold text-gray-300 sm:inline">En llamada</span>
+      <button onClick={onToggleAudio} title={audioOn ? 'Silenciar micrófono' : 'Activar micrófono'} className={`flex h-11 w-11 items-center justify-center rounded-xl transition-all ${audioOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'border border-red-500/50 bg-red-500/20 text-red-400'}`}>
+        {audioOn ? <Mic size={18} /> : <MicOff size={18} />}
       </button>
-
-      {/* Camera Toggle */}
-      <button
-        onClick={onToggleVideo}
-        title={videoOn ? 'Apagar Cámara' : 'Encender Cámara'}
-        className={`w-11 h-11 rounded-full flex items-center justify-center text-lg transition-all ${
-          videoOn
-            ? 'bg-gray-800 hover:bg-gray-700 text-white'
-            : 'bg-red-500/20 text-red-400 border border-red-500/50'
-        }`}
-      >
-        {videoOn ? '📹' : '📹❌'}
+      <button onClick={onToggleVideo} title={videoOn ? 'Apagar cámara' : 'Encender cámara'} className={`flex h-11 w-11 items-center justify-center rounded-xl transition-all ${videoOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'border border-red-500/50 bg-red-500/20 text-red-400'}`}>
+        {videoOn ? <Video size={18} /> : <VideoOff size={18} />}
       </button>
-
-      {/* Screen Share Toggle */}
-      <button
-        onClick={onToggleScreenShare}
-        title={isScreenSharing ? 'Detener Pantalla' : 'Compartir Pantalla'}
-        className={`w-11 h-11 rounded-full flex items-center justify-center text-lg transition-all ${
-          isScreenSharing
-            ? 'bg-aimly-orange text-white shadow-lg shadow-aimly-orange/30'
-            : 'bg-gray-800 hover:bg-gray-700 text-white'
-        }`}
-      >
-        🖥️
+      <button onClick={onToggleScreenShare} title={isScreenSharing ? 'Detener pantalla' : 'Compartir pantalla'} className={`flex h-11 w-11 items-center justify-center rounded-xl transition-all ${isScreenSharing ? 'bg-aimly-orange text-white shadow-lg shadow-aimly-orange/30' : 'bg-gray-800 text-white hover:bg-gray-700'}`}>
+        <MonitorUp size={18} />
       </button>
-
-      <div className="w-px h-6 bg-gray-800 my-auto"></div>
-
-      {/* Leave Call */}
-      <button
-        onClick={onLeaveCall}
-        title="Salir de la llamada"
-        className="w-11 h-11 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center text-lg font-bold shadow-lg transition-all"
-      >
-        📞❌
+      <span className="h-7 w-px bg-gray-700" />
+      <button onClick={onLeaveCall} title="Salir de la llamada" className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white shadow-lg transition-all hover:bg-red-500">
+        <PhoneOff size={18} />
       </button>
     </div>
   );

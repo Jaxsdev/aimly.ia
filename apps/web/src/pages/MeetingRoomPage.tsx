@@ -8,7 +8,7 @@ import { MeetingProvider, useMeeting } from '../contexts/MeetingContext';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebRTC } from '../hooks/useWebRTC';
-import { VideoGrid } from '../components/meeting/VideoGrid';
+import { CallAudio, VideoGrid } from '../components/meeting/VideoGrid';
 import { CallControls } from '../components/meeting/CallControls';
 
 function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
@@ -175,6 +175,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
 
   return (
     <div className="h-screen w-full bg-aimly-bg flex flex-col overflow-hidden font-sans relative">
+      <CallAudio peers={peers} />
       <MeetingHeader onFinish={onFinish} />
 
       {/* Main Content Area: Either Board View or Full Video Grid View */}
