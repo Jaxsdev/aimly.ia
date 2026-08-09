@@ -18,11 +18,14 @@ export interface Participant {
   isOnline: boolean;
 }
 
+export interface ReadinessParticipant { user_id: string; role: string; is_ready: boolean; ready_at?: string | null; profiles?: { id: string; name: string } | null; }
+
 interface MeetingContextType {
   meeting: any | null;
   messages: any[];
   cards: any[];
   participants: Participant[];
+  readiness: ReadinessParticipant[];
   collaborators: Map<string, any>;
   stickyCursors: Map<string, { x: number; y: number; name: string }>;
   loading: boolean;
@@ -31,6 +34,7 @@ interface MeetingContextType {
   createCard: (card: any) => Promise<void>;
   updateCard: (cardId: string, updates: any) => Promise<void>;
   refreshMeeting: () => Promise<void>;
+  setReady: (isReady: boolean) => Promise<void>;
 }
 
 const MeetingContext = createContext<MeetingContextType | undefined>(undefined);
@@ -45,6 +49,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const [messages, setMessages] = useState<any[]>([]);
   const [cards, setCards] = useState<any[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [readiness, setReadiness] = useState<ReadinessParticipant[]>([]);
   const [collaborators, setCollaborators] = useState<Map<string, any>>(new Map());
   const [stickyCursors, setStickyCursors] = useState<Map<string, { x: number; y: number; name: string }>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -70,10 +75,11 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         await api.meetings.join(meetingId).catch(console.warn);
       }
 
-      const [m, msg, crd] = await Promise.all([
+      const [m, msg, crd, ready] = await Promise.all([
         api.meetings.get(meetingId).catch(() => null),
         api.messages.list(meetingId).catch(() => []),
-        api.cards.list(meetingId).catch(() => [])
+        api.cards.list(meetingId).catch(() => []),
+        api.meetings.readiness(meetingId).catch(() => [])
       ]);
 
       const activeMeeting = m || {
@@ -89,6 +95,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       setMeeting(activeMeeting);
       setMessages(Array.isArray(msg) ? msg : []);
       setCards(Array.isArray(crd) ? crd : []);
+      setReadiness(Array.isArray(ready) ? ready : []);
     } catch (err) {
       console.error('[MeetingContext] Error fetching initial data:', err);
       setMeeting({
@@ -216,6 +223,13 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       .on('broadcast', { event: 'board_card_updated' }, ({ payload }) => {
         if (!payload?.id) return;
         setCards(prev => prev.map(card => card.id === payload.id ? { ...card, ...payload } : card));
+      })
+
+      .on('broadcast', { event: 'participant_readiness_changed' }, ({ payload }) => {
+        if (!payload?.user_id) return;
+        setReadiness(prev => prev.some(participant => participant.user_id === payload.user_id)
+          ? prev.map(participant => participant.user_id === payload.user_id ? payload : participant)
+          : [...prev, payload]);
       })
 
       .on('broadcast', { event: 'sticky_cursor' }, ({ payload }) => {
@@ -505,12 +519,22 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
     }
   };
 
+  const setReady = async (isReady: boolean) => {
+    const updated: any = await api.meetings.setReady(meetingId, isReady);
+    setReadiness(prev => {
+      const exists = prev.some(participant => participant.user_id === updated.user_id);
+      return exists ? prev.map(participant => participant.user_id === updated.user_id ? updated : participant) : [...prev, updated];
+    });
+    sendBroadcast('participant_readiness_changed', updated);
+  };
+
   return (
     <MeetingContext.Provider value={{
       meeting,
       messages,
       cards,
       participants,
+      readiness,
       collaborators,
       stickyCursors,
       loading,
@@ -518,7 +542,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       sendMessage,
       createCard,
       updateCard,
-      refreshMeeting: fetchAll
+      refreshMeeting: fetchAll,
+      setReady
     }}>
       {children}
     </MeetingContext.Provider>

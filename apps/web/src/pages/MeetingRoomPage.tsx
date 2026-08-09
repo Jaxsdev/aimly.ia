@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { CallAudio, VideoGrid } from '../components/meeting/VideoGrid';
 import { CallControls } from '../components/meeting/CallControls';
+import { WaitingLobby } from '../components/meeting/WaitingLobby';
 
 function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
   const { user, loading: authLoading, signInWithPassword, signUp } = useAuth();
@@ -236,6 +237,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
         onToggleVideo={toggleVideo}
         onToggleScreenShare={toggleScreenShare}
       />}
+      {meeting?.status === 'draft' && <WaitingLobby />}
     </div>
   );
 }

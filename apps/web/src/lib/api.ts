@@ -63,6 +63,14 @@ export const api = {
     updateFocus: (meetingId: string, body: { objective: string; expectedOutcome: string }) =>
       apiRequest('PATCH', `/api/meetings/${meetingId}/focus`, body),
 
+    readiness: (meetingId: string) => apiRequest<any[]>('GET', `/api/meetings/${meetingId}/readiness`),
+
+    setReady: (meetingId: string, isReady: boolean) =>
+      apiRequest('PATCH', `/api/meetings/${meetingId}/readiness`, { isReady }),
+
+    startFacilitation: (meetingId: string) =>
+      apiRequest<{ meeting: any; introduction: string; phases: any[] }>('POST', `/api/meetings/${meetingId}/start-facilitation`),
+
     join: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/join`),
 
     analyze: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/analyze`),

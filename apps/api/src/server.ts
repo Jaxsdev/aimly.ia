@@ -38,6 +38,8 @@ const updateMeetingFocusSchema = z.object({
   expectedOutcome: z.string().min(1).max(2000)
 });
 
+const participantReadySchema = z.object({ isReady: z.boolean() });
+
 const saveExcalidrawSceneSchema = z.object({
   elements: z.array(z.unknown()).max(5000)
 });
@@ -515,6 +517,48 @@ server.patch(
     return reply.send({ success: true, data });
   }
 );
+
+server.get('/api/meetings/:meetingId/readiness', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const { data, error } = await supabase.from('meeting_participants').select('user_id, role, is_ready, ready_at, profiles(id, name)').eq('meeting_id', meetingId).order('joined_at');
+  if (error) throw new Error(error.message);
+  return reply.send({ success: true, data: data || [] });
+});
+
+server.patch('/api/meetings/:meetingId/readiness', { preHandler: requireAuth, schema: { body: participantReadySchema } }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const { isReady } = request.body as z.infer<typeof participantReadySchema>;
+  const { data, error } = await supabase.from('meeting_participants').update({ is_ready: isReady, ready_at: isReady ? new Date().toISOString() : null }).eq('meeting_id', meetingId).eq('user_id', request.user.id).select('user_id, role, is_ready, ready_at, profiles(id, name)').single();
+  if (error) throw new Error(error.message);
+  await publishMeetingEvent(meetingId, 'participant_readiness_changed', data);
+  return reply.send({ success: true, data });
+});
+
+server.post('/api/meetings/:meetingId/start-facilitation', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const [{ data: meeting }, { data: participants }] = await Promise.all([
+    supabase.from('meetings').select('*').eq('id', meetingId).single(),
+    supabase.from('meeting_participants').select('user_id, is_ready, profiles(name)').eq('meeting_id', meetingId)
+  ]);
+  if (!meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Reunión no encontrada' } });
+  if (meeting.host_id !== request.user.id) return reply.status(403).send({ success: false, error: { code: 'HOST_ONLY', message: 'Solo el host puede iniciar la facilitación' } });
+  if ((participants || []).some((participant: any) => !participant.is_ready)) return reply.status(409).send({ success: false, error: { code: 'PARTICIPANTS_NOT_READY', message: 'Aún hay participantes sin marcar Listo' } });
+
+  const names = (participants || []).map((participant: any) => participant.profiles?.name || 'participante').join(', ');
+  const introduction = `¡Bienvenidos ${names}! Soy AimLy y voy a facilitar esta reunión. Nuestro objetivo es: ${meeting.objective}. Antes de decidir, quiero entender las perspectivas de todos. Empecemos con una ronda breve: ¿qué consideran indispensable para lograr el resultado esperado?`;
+  const phases = [
+    { title: 'Contextualización', description: 'Cada participante comparte su perspectiva y criterios.', minutes: Math.max(3, Math.round(meeting.duration_minutes * 0.2)) },
+    { title: 'Explorar alternativas', description: 'Registrar ideas y evidencias en la pizarra.', minutes: Math.max(4, Math.round(meeting.duration_minutes * 0.3)) },
+    { title: 'Priorizar y decidir', description: 'Comparar opciones contra el objetivo y alcanzar un acuerdo.', minutes: Math.max(3, Math.round(meeting.duration_minutes * 0.3)) },
+    { title: 'Próximos pasos', description: 'Confirmar responsables y tareas concretas.', minutes: Math.max(2, Math.round(meeting.duration_minutes * 0.2)) }
+  ];
+  const { error: agendaError } = await supabase.from('meeting_agendas').upsert({ meeting_id: meetingId, introduction, phases, updated_at: new Date().toISOString() });
+  if (agendaError) throw new Error(agendaError.message);
+  const { data, error } = await supabase.from('meetings').update({ status: 'active', started_at: meeting.started_at || new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', meetingId).select().single();
+  if (error) throw new Error(error.message);
+  await publishMeetingEvent(meetingId, 'facilitation_started', { introduction, phases });
+  return reply.send({ success: true, data: { meeting: data, introduction, phases } });
+});
 
 server.put(
   '/api/meetings/:meetingId/excalidraw-scene',
