@@ -47,6 +47,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
 
+  const knownElementsRef = useRef<Map<string, number>>(new Map());
+
   // Keep a ref to the channel so we can clean it up
   const channelRef = useRef<RealtimeChannel | null>(null);
 
@@ -196,15 +198,28 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         }
       })
 
-      // ── Ultra-Fast Direct WebSocket Drawing Broadcast (Pinturillo 2 speed) ────
-      .on('broadcast', { event: 'excalidraw_stroke' }, ({ payload }) => {
-        if (payload?.elements) {
-          try {
-            localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(payload.elements));
-          } catch (e) {}
+      // ── Ultra-Fast Delta WebSocket Drawing Broadcast (Canva/Figma speed) ────
+      .on('broadcast', { event: 'excalidraw_delta' }, ({ payload }) => {
+        if (payload?.deltas && Array.isArray(payload.deltas) && payload.deltas.length > 0) {
           if ((window as any).excalidrawAPI) {
             (window as any).isIncomingSync = true;
-            (window as any).excalidrawAPI.updateScene({ elements: payload.elements });
+            const currentElements = (window as any).excalidrawAPI.getSceneElements() || [];
+            const elementMap = new Map<string, any>(currentElements.map((el: any) => [el.id, el]));
+
+            for (const delta of payload.deltas) {
+              const existing = elementMap.get(delta.id);
+              if (!existing || (delta.version && delta.version >= (existing.version || 0))) {
+                elementMap.set(delta.id, delta);
+                knownElementsRef.current.set(delta.id, delta.version || 0);
+              }
+            }
+
+            const merged = Array.from(elementMap.values());
+            try {
+              localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
+            } catch (e) {}
+
+            (window as any).excalidrawAPI.updateScene({ elements: merged });
             setTimeout(() => {
               (window as any).isIncomingSync = false;
             }, 50);
@@ -259,28 +274,44 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       });
 
     channelRef.current = channel;
-    (window as any).broadcastStroke = (elements: any[]) => {
-      if (channelRef.current) {
+    (window as any).broadcastDelta = (elements: any[]) => {
+      if (!channelRef.current || !elements || elements.length === 0) return;
+
+      const changedDeltas: any[] = [];
+      for (const el of elements) {
+        const lastVer = knownElementsRef.current.get(el.id);
+        const curVer = el.version || 0;
+        if (lastVer === undefined || curVer !== lastVer) {
+          knownElementsRef.current.set(el.id, curVer);
+          changedDeltas.push(el);
+        }
+      }
+
+      if (changedDeltas.length > 0) {
         channelRef.current.send({
           type: 'broadcast',
-          event: 'excalidraw_stroke',
-          payload: { elements }
+          event: 'excalidraw_delta',
+          payload: { deltas: changedDeltas }
         });
       }
     };
 
     (window as any).broadcastPointer = (pointer: { x: number; y: number }) => {
-      if (channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'mouse_move',
-          payload: {
-            x: pointer.x,
-            y: pointer.y,
-            userId: user.id,
-            name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
-          }
-        });
+      const now = Date.now();
+      if (now - ((window as any).lastPointerBroadcast || 0) > 50) { // 20fps throttled
+        (window as any).lastPointerBroadcast = now;
+        if (channelRef.current) {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'mouse_move',
+            payload: {
+              x: pointer.x,
+              y: pointer.y,
+              userId: user.id,
+              name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
+            }
+          });
+        }
       }
     };
 

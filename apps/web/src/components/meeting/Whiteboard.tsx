@@ -144,8 +144,8 @@ export function Whiteboard() {
                   const now = Date.now();
                   if (now - ((window as any).lastExcalidrawBroadcast || 0) > 30) {
                     (window as any).lastExcalidrawBroadcast = now;
-                    if ((window as any).broadcastStroke) {
-                      (window as any).broadcastStroke(elements);
+                    if ((window as any).broadcastDelta) {
+                      (window as any).broadcastDelta(elements);
                     }
                   }
                 }
