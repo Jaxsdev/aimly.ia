@@ -116,7 +116,18 @@ export function Whiteboard() {
 
       {/* ── MODE 1: EXCALIDRAW ENGINE ── */}
       {viewMode === 'excalidraw' && (
-        <div className="w-full h-full relative z-10 pt-12">
+        <div 
+          className="w-full h-full relative z-10 pt-12"
+          onPointerDown={() => {
+            (window as any).isUserDrawing = true;
+          }}
+          onPointerUp={() => {
+            (window as any).isUserDrawing = false;
+            if ((window as any).flushPendingDeltas) {
+              (window as any).flushPendingDeltas();
+            }
+          }}
+        >
           <Excalidraw 
             theme="light"
             initialData={{
