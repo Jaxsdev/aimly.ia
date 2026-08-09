@@ -193,7 +193,19 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
         </div>
       ) : (
         <div className="flex-1 flex overflow-hidden relative">
-          <LeftPanel />
+          <LeftPanel
+            isInCall={isInCall}
+            localStream={localStream}
+            peers={peers}
+            audioOn={audioOn}
+            videoOn={videoOn}
+            isScreenSharing={isScreenSharing}
+            onJoinCall={joinCall}
+            onLeaveCall={leaveCall}
+            onToggleAudio={toggleAudio}
+            onToggleVideo={toggleVideo}
+            onToggleScreenShare={toggleScreenShare}
+          />
           <Whiteboard />
           <AimLyPanel />
 
@@ -210,8 +222,8 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
         </div>
       )}
 
-      {/* Call Controls Floating Bar */}
-      <CallControls
+      {/* Full-grid view keeps its call controls floating; board controls live in the left panel. */}
+      {isInCall && viewMode === 'grid' && <CallControls
         isInCall={isInCall}
         audioOn={audioOn}
         isSpeaking={isSpeaking}
@@ -222,7 +234,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
         onToggleAudio={toggleAudio}
         onToggleVideo={toggleVideo}
         onToggleScreenShare={toggleScreenShare}
-      />
+      />}
     </div>
   );
 }

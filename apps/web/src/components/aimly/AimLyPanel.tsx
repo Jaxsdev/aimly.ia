@@ -6,6 +6,7 @@ import { Card, Badge } from '../ui';
 import { AimLyState, demoVote, demoDecision, demoTasks } from '../../mocks';
 import { useMeeting } from '../../contexts/MeetingContext';
 import { api } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface PrivateChatMessage {
   id: string;
@@ -15,8 +16,9 @@ interface PrivateChatMessage {
 }
 
 export function AimLyPanel() {
-  const { meeting, createCard } = useMeeting();
-  const [activeTab, setActiveTab] = useState<'Copiloto' | 'Sugerencias' | 'Decisiones' | 'Tareas'>('Copiloto');
+  const { meeting, createCard, messages, sendMessage } = useMeeting();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'Sala' | 'Copiloto' | 'Sugerencias' | 'Decisiones' | 'Tareas'>('Sala');
   const [state, setState] = useState<AimLyState>('idle');
   const [input, setInput] = useState('');
   const [suggestion, setSuggestion] = useState<string>('');
@@ -34,10 +36,18 @@ export function AimLyPanel() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (activeTab === 'Copiloto') {
+    if (activeTab === 'Copiloto' || activeTab === 'Sala') {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [privateMessages, activeTab]);
+  }, [privateMessages, messages, activeTab]);
+
+  const handleSendRoomMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const content = input.trim();
+    if (!content) return;
+    await sendMessage(content);
+    setInput('');
+  };
 
   const handleAskAimLy = async () => {
     if (!meeting?.id) return;
@@ -161,7 +171,7 @@ export function AimLyPanel() {
 
       {/* Navigation Tabs */}
       <div className="flex px-1 pt-1.5 border-b border-aimly-border bg-aimly-bg">
-        {(['Copiloto', 'Sugerencias', 'Decisiones', 'Tareas'] as const).map((tab) => (
+        {(['Sala', 'Copiloto', 'Sugerencias', 'Decisiones', 'Tareas'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -178,6 +188,18 @@ export function AimLyPanel() {
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-3.5 custom-scrollbar bg-aimly-bg flex flex-col gap-3">
+        {activeTab === 'Sala' && (
+          <div className="flex flex-1 flex-col gap-3">
+            <div className="flex items-center gap-2 rounded-xl border border-aimly-orange/20 bg-aimly-orange/10 p-2 text-[11px] text-aimly-text"><Sparkles size={14} className="text-aimly-orange" /><span><strong>Conversación compartida.</strong> AimLy observa el contexto y puede analizarlo cuando lo necesiten.</span></div>
+            {messages.map((message: any) => {
+              const isMe = message.author_id === user?.id;
+              const author = message.profiles?.name || (isMe ? 'Tú' : 'Participante');
+              return <div key={message.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}><span className="mb-0.5 px-1 text-[9px] font-semibold text-aimly-text/55">{isMe ? 'Tú' : author}</span><div className={`max-w-[92%] rounded-2xl p-2.5 text-xs leading-relaxed shadow-sm ${isMe ? 'rounded-tr-sm bg-aimly-orange text-white' : 'rounded-tl-sm border border-aimly-border bg-white text-aimly-text'}`}>{message.content}</div></div>;
+            })}
+            {messages.length === 0 && <div className="py-10 text-center text-xs text-aimly-text/50">Inicien la conversación. AimLy usará estos mensajes como contexto.</div>}
+            <div ref={chatEndRef} />
+          </div>
+        )}
         
         {/* ── TAB 1: COPILOTO PRIVADO 1-ON-1 ── */}
         {activeTab === 'Copiloto' && (
@@ -336,7 +358,9 @@ export function AimLyPanel() {
       <div className="p-3 bg-aimly-surface border-t border-aimly-border flex flex-col gap-1.5">
         <form 
           onSubmit={(e) => {
-            if (activeTab === 'Copiloto') {
+            if (activeTab === 'Sala') {
+              handleSendRoomMessage(e);
+            } else if (activeTab === 'Copiloto') {
               handleSendPrivateMessage(e);
             } else {
               e.preventDefault();
@@ -349,7 +373,7 @@ export function AimLyPanel() {
             type="text" 
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={activeTab === 'Copiloto' ? "Mensaje privado para AimLy..." : "Consulta general..."}
+            placeholder={activeTab === 'Sala' ? 'Escribe para el equipo y AimLy…' : activeTab === 'Copiloto' ? 'Mensaje privado para AimLy...' : 'Consulta general...'}
             className="flex-1 bg-transparent border-none text-xs text-aimly-text px-3 py-1.5 focus:outline-none placeholder:text-aimly-text/40"
           />
           <button 
@@ -363,7 +387,7 @@ export function AimLyPanel() {
         
         <div className="flex items-center gap-1 px-1 text-[9px] text-aimly-text/40 font-medium">
           <Lock size={9} />
-          <span>{activeTab === 'Copiloto' ? 'Conversación privada de copiloto 1-a-1' : 'AimLy facilita tu reunión'}</span>
+          <span>{activeTab === 'Sala' ? 'Chat compartido: AimLy usa esta conversación como contexto' : activeTab === 'Copiloto' ? 'Conversación privada de copiloto 1-a-1' : 'AimLy facilita tu reunión'}</span>
         </div>
       </div>
 
