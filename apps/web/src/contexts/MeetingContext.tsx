@@ -44,7 +44,7 @@ const MeetingContext = createContext<MeetingContextType | undefined>(undefined);
 // ─────────────────────────────────────────────────────────────
 
 export function MeetingProvider({ meetingId, children }: { meetingId: string; children: React.ReactNode }) {
-  const { user, signInAnonymously, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [meeting, setMeeting] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [cards, setCards] = useState<any[]>([]);
@@ -110,8 +110,6 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       setLoading(false);
     }
   }, [meetingId, user]);
-
-  const guestAttemptedRef = useRef(false);
 
   // ── Supabase Realtime subscription ─────────────────────────
   useEffect(() => {
@@ -264,7 +262,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             }
             try {
               localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
-            } catch (e) {}
+            } catch {}
 
             api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
             setTimeout(() => {
@@ -387,7 +385,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         }
         try {
           localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
-        } catch (e) {}
+        } catch {}
         api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
         setTimeout(() => {
           (window as any).isIncomingSync = false;
@@ -408,7 +406,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         if (remoteElements) {
           try {
             localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(remoteElements));
-          } catch (e) {}
+          } catch {}
           if ((window as any).excalidrawAPI) {
             (window as any).excalidrawAPI.updateScene({ elements: remoteElements });
           }
@@ -432,7 +430,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             return [...msgData, ...filteredTemp];
           });
         }
-      } catch (e) {}
+      } catch {}
     }, 2000);
 
     return () => {
@@ -445,7 +443,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       channelReadyRef.current = false;
       setIsConnected(false);
     };
-  }, [meetingId, user, authLoading, signInAnonymously, fetchAll]);
+  }, [meetingId, user, authLoading, fetchAll]);
 
   // ── Mutations ───────────────────────────────────────────────
 
@@ -550,6 +548,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   );
 }
 
+// oxlint-disable-next-line react/only-export-components
 export function useMeeting() {
   const ctx = useContext(MeetingContext);
   if (!ctx) throw new Error('useMeeting must be used within MeetingProvider');

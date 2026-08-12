@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -36,7 +36,7 @@ export function useWebRTC(meetingId: string) {
   const turnUsername = import.meta.env.VITE_TURN_USERNAME as string | undefined;
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
 
-  const iceServers: RTCConfiguration = {
+  const iceServers = useMemo<RTCConfiguration>(() => ({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
@@ -45,7 +45,7 @@ export function useWebRTC(meetingId: string) {
         ? [{ urls: turnUrl, username: turnUsername, credential: turnCredential }]
         : [])
     ]
-  };
+  }), [turnUrl, turnUsername, turnCredential]);
 
   // Helper to create RTCPeerConnection for a remote peer
   const createPeerConnection = useCallback((remoteUserId: string, remoteName: string) => {
@@ -102,7 +102,7 @@ export function useWebRTC(meetingId: string) {
     };
 
     return pc;
-  }, [user?.id]);
+  }, [iceServers, user?.id]);
 
   // Handle incoming signaling messages
   useEffect(() => {
@@ -246,7 +246,14 @@ export function useWebRTC(meetingId: string) {
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [meetingId, user?.id, isInCall, createPeerConnection]);
+  }, [
+    meetingId,
+    user?.id,
+    user?.email,
+    user?.user_metadata?.full_name,
+    isInCall,
+    createPeerConnection
+  ]);
 
   // Join Call
   const startAudioMeter = (stream: MediaStream) => {

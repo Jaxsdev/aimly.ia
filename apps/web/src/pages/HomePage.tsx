@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
-import { Card, Badge, Avatar } from '../components/ui';
-import { Sparkles, Calendar as CalIcon, Clock, MoreHorizontal, Target, Lock, CheckCircle2, ChevronRight, Users } from 'lucide-react';
+import { Card, Badge } from '../components/ui';
+import { Sparkles, Calendar as CalIcon, Clock, MoreHorizontal, Target, CheckCircle2, ChevronRight, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,6 +28,9 @@ export default function HomePage() {
     
     fetchMeetings();
   }, [user]);
+
+  if (authLoading) return null;
+  if (!user) return <Navigate to="/" replace />;
 
   const inProgressMeetings = meetings.filter(m => m.status === 'in_progress' || m.status === 'draft');
   const completedMeetings = meetings.filter(m => m.status === 'closed');
@@ -104,10 +107,10 @@ export default function HomePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               
               {inProgressMeetings.map(meeting => (
-                <Card key={meeting.id} onClick={() => navigate(`/meeting/${meeting.id}`)} className="p-5 hover:border-aimly-orange/40 hover:shadow-md transition-all cursor-pointer group flex flex-col h-full bg-white relative overflow-hidden">
+                <Card key={meeting.id} onClick={() => navigate(meeting.status === 'draft' ? `/meeting/${meeting.id}/lobby` : `/meeting/${meeting.id}`)} className="p-5 hover:border-aimly-orange/40 hover:shadow-md transition-all cursor-pointer group flex flex-col h-full bg-white relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-1 bg-aimly-orange"></div>
                   <div className="flex justify-between items-start mb-4">
-                    <Badge variant="warning" className="animate-pulse">En curso</Badge>
+                    <Badge variant="warning" className="animate-pulse">{meeting.status === 'draft' ? 'En espera' : 'En curso'}</Badge>
                     <button className="text-aimly-text/40 hover:text-aimly-text"><MoreHorizontal size={18} /></button>
                   </div>
                   <h3 className="font-bold text-aimly-text text-lg mb-2 group-hover:text-aimly-orange transition-colors leading-tight">

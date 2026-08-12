@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sparkles, Check, Send, AlertCircle, BarChart3, Lock, MessageSquare, PlusCircle, ListTodo, UserRound } from 'lucide-react';
+import { Sparkles, Send, BarChart3, Lock, PlusCircle, ListTodo, UserRound } from 'lucide-react';
 import { Card, Badge } from '../ui';
-import { AimLyState, demoVote, demoDecision, demoTasks } from '../../mocks';
+import { AimLyState, demoVote, demoDecision } from '../../mocks';
 import { useMeeting } from '../../contexts/MeetingContext';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { ImpactEffortMatrix } from './ImpactEffortMatrix';
 
 interface PrivateChatMessage {
   id: string;
@@ -35,6 +36,9 @@ export function AimLyPanel() {
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
   const [isPreparingTasks, setIsPreparingTasks] = useState(false);
+  const [isPreparingBoard, setIsPreparingBoard] = useState(false);
+  const [artifacts, setArtifacts] = useState<any[]>([]);
+  const [isPreparingArtifact, setIsPreparingArtifact] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,6 +51,11 @@ export function AimLyPanel() {
     if (activeTab !== 'Tareas' || !meeting?.id) return;
     api.tasks.list(meeting.id).then(setTasks).catch((error) => console.warn('[AimLy] No se pudieron cargar las tareas.', error));
   }, [activeTab, meeting?.id]);
+
+  useEffect(() => {
+    if (!meeting?.id) return;
+    api.artifacts.list(meeting.id).then(setArtifacts).catch(() => setArtifacts([]));
+  }, [meeting?.id]);
 
   const handleSendRoomMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -98,6 +107,42 @@ export function AimLyPanel() {
       alert('Hubo un problema al consultar a AimLy. Verifica que el servidor API esté respondiendo.');
       setState('idle');
     }
+  };
+
+  const handleBoardProposal = async () => {
+    if (!meeting?.id || isPreparingBoard) return;
+    const prompt = window.prompt('¿Qué quieres que AimLy agregue a la pizarra?');
+    if (!prompt?.trim()) return;
+    setIsPreparingBoard(true);
+    try {
+      const proposal = await api.aimly.boardProposal(meeting.id, prompt.trim());
+      window.dispatchEvent(new CustomEvent('aimly:board-proposal', { detail: proposal }));
+    } catch (error) {
+      console.error('[AimLy] No se pudo crear la propuesta de pizarra.', error);
+      alert('AimLy no pudo preparar la propuesta. Inténtalo otra vez.');
+    } finally { setIsPreparingBoard(false); }
+  };
+
+  const handleFlowProposal = async () => {
+    if (!meeting?.id) return;
+    const prompt = window.prompt('Describe el flujo que quieres crear.');
+    if (!prompt?.trim()) return;
+    try {
+      const proposal = await api.aimly.mermaidProposal(meeting.id, prompt.trim());
+      window.dispatchEvent(new CustomEvent('aimly:mermaid-proposal', { detail: proposal }));
+    } catch { alert('AimLy no pudo crear el flujo.'); }
+  };
+
+  const handleMatrixArtifact = async () => {
+    if (!meeting?.id || isPreparingArtifact) return;
+    const prompt = window.prompt('¿Qué alternativas quieres priorizar en la matriz?');
+    if (!prompt?.trim()) return;
+    setIsPreparingArtifact(true);
+    try {
+      const artifact = await api.artifacts.createImpactEffort(meeting.id, prompt.trim());
+      setArtifacts((current) => [...current, artifact]);
+      setActiveTab('Sugerencias');
+    } catch { alert('AimLy no pudo crear la matriz.'); } finally { setIsPreparingArtifact(false); }
   };
 
   const handleSendPrivateMessage = async (e?: React.FormEvent) => {
@@ -200,6 +245,10 @@ export function AimLyPanel() {
         >
           <Sparkles size={12} className="text-aimly-orange" /> Analizar
         </button>
+        <button onClick={handleBoardProposal} disabled={isPreparingBoard} className="btn-secondary py-1.5 px-2.5 rounded-xl text-xs font-bold bg-white border border-aimly-border disabled:opacity-50">
+          {isPreparingBoard ? 'Creando…' : 'Pizarra'}
+        </button>
+        <button onClick={handleFlowProposal} className="btn-secondary py-1.5 px-2.5 rounded-xl text-xs font-bold bg-white border border-aimly-border">Flujo</button>
       </div>
 
       {/* Navigation Tabs */}
@@ -285,6 +334,12 @@ export function AimLyPanel() {
         {/* ── TAB 2: SUGERENCIAS GENERALES ── */}
         {activeTab === 'Sugerencias' && (
           <>
+            <Card className="p-3 border-aimly-orange/30 bg-gradient-to-br from-[#FFF8F2] to-white">
+              <h4 className="text-xs font-bold text-aimly-text">Herramientas interactivas</h4>
+              <p className="mt-1 text-[11px] text-aimly-text/60">Crea una matriz editable para priorizar ideas por impacto y esfuerzo.</p>
+              <button onClick={handleMatrixArtifact} disabled={isPreparingArtifact} className="mt-3 w-full rounded-xl bg-aimly-orange py-2 text-xs font-bold text-white disabled:opacity-50">{isPreparingArtifact ? 'AimLy está creando la matriz…' : 'Crear matriz impacto / esfuerzo'}</button>
+            </Card>
+            {artifacts.filter((artifact) => artifact.type === 'impact_effort_matrix').slice(-1).map((artifact) => <ImpactEffortMatrix key={artifact.id} artifact={artifact} />)}
             {state === 'idle' && (
               <div className="h-full flex flex-col items-center justify-center text-center gap-3 animate-in fade-in py-8">
                 <div className="w-14 h-14 rounded-full bg-aimly-surface border border-aimly-border shadow-sm flex items-center justify-center">

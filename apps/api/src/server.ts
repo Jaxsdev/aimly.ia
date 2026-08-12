@@ -9,7 +9,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { verifyToken, supabase } from './lib/supabase.js';
-import { analyzeMeeting, suggestTasks, generateMeetingSummary, privateCopilotChat } from './ai/aimly.service.js';
+import { analyzeMeeting, suggestTasks, generateMeetingSummary, privateCopilotChat, generateBoardProposal, generateMermaidDiagram, generateImpactEffortArtifact } from './ai/aimly.service.js';
 import { publishMeetingEvent } from './realtime/portal.server.js';
 const createMeetingSchema = z.object({
   title: z.string().min(1).max(200),
@@ -102,83 +102,42 @@ server.setErrorHandler((error, request, reply) => {
   });
 });
 
-// ============================================================
-function isValidUUID(str?: string): boolean {
-  if (!str) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-}
-
-const guestUsersCache = new Map<string, string>();
-
-async function ensureGuestUserExists(guestIdHeader?: string, guestName: string = 'Invitado'): Promise<{ id: string; name: string }> {
-  const targetId = isValidUUID(guestIdHeader) ? guestIdHeader! : null;
-  if (targetId && guestUsersCache.has(targetId)) {
-    return { id: targetId, name: guestName };
-  }
-
-  if (targetId) {
-    const { data: existingProf } = await supabase.from('profiles').select('id, name').eq('id', targetId).single();
-    if (existingProf) {
-      guestUsersCache.set(targetId, existingProf.id);
-      return { id: existingProf.id, name: existingProf.name || guestName };
-    }
-  }
-
-  // Create real user in auth.users using admin client so foreign key references auth.users(id) pass 100%
-  const cleanId = targetId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Math.random().toString(16).substring(2, 14).padStart(12, '0'));
-  const guestEmail = `guest_${cleanId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}_${Date.now()}@aimly.local`;
-
-  const { data: newUser } = await supabase.auth.admin.createUser({
-    id: cleanId,
-    email: guestEmail,
-    password: 'GuestPassword123!',
-    email_confirm: true,
-    user_metadata: { full_name: guestName }
-  }).catch(() => ({ data: null })) as any;
-
-  const finalUserId = newUser?.user?.id || cleanId;
-
-  try {
-    await supabase.from('profiles').upsert({
-      id: finalUserId,
-      name: guestName,
-      avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${finalUserId}`
-    });
-  } catch (e) {}
-
-  guestUsersCache.set(finalUserId, finalUserId);
-  return { id: finalUserId, name: guestName };
-}
-
-async function requireAuth(request: any, reply: any) {
+async function requireAuth(request: any, _reply: any) {
   const authHeader = request.headers.authorization as string | undefined;
-  const guestIdHeader = request.headers['x-guest-id'] as string | undefined;
-  const guestName = (request.headers['x-guest-name'] as string | undefined) || 'Invitado';
-
-  if (!authHeader?.startsWith('Bearer ') || authHeader === 'Bearer guest_token') {
-    const guestUser = await ensureGuestUserExists(guestIdHeader, guestName);
-    request.user = {
-      id: guestUser.id,
-      email: `${guestUser.id}@aimly.local`,
-      name: guestUser.name,
-      user_metadata: { full_name: guestUser.name }
-    };
-    return;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return _reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication is required' } });
   }
   const token = authHeader.slice(7);
   const user = await verifyToken(token).catch(() => null);
   if (!user) {
-    const guestUser = await ensureGuestUserExists(guestIdHeader, guestName);
-    request.user = {
-      id: guestUser.id,
-      email: `${guestUser.id}@aimly.local`,
-      name: guestUser.name,
-      user_metadata: { full_name: guestUser.name }
-    };
-    return;
+    return _reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired session' } });
   }
   request.user = user;
 }
+
+// Every meeting-scoped endpoint requires membership. Joining is intentionally
+// excluded so an authenticated user can enter a meeting through its invite URL.
+server.addHook('preHandler', async (request: any, reply) => {
+  const match = request.url.match(/^\/api\/meetings\/([^/?]+)/);
+  if (!match || request.url.startsWith(`/api/meetings/${match[1]}/join`)) return;
+
+  await requireAuth(request, reply);
+  if (reply.sent) return;
+
+  const { data: participation, error } = await supabase
+    .from('meeting_participants')
+    .select('id')
+    .eq('meeting_id', match[1])
+    .eq('user_id', request.user.id)
+    .maybeSingle();
+
+  if (error || !participation) {
+    return reply.status(403).send({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'You must join this meeting before accessing it' }
+    });
+  }
+});
 
 // ============================================================
 // Health check
@@ -612,14 +571,15 @@ server.post(
     const { meetingId } = request.params as { meetingId: string };
 
     // Gather full meeting context
-    const [{ data: meeting }, { data: participants }, { data: messages }, { data: cards }, { data: groups }, { data: decisions }, { data: tasks }] = await Promise.all([
+    const [{ data: meeting }, { data: participants }, { data: messages }, { data: cards }, { data: groups }, { data: decisions }, { data: tasks }, { data: memory }] = await Promise.all([
       supabase.from('meetings').select('*').eq('id', meetingId).single(),
       supabase.from('meeting_participants').select('*, profiles(id, name)').eq('meeting_id', meetingId),
       supabase.from('chat_messages').select('author_id, content, created_at').eq('meeting_id', meetingId).order('created_at', { ascending: true }).limit(50),
       supabase.from('board_cards').select('id, text, group_id').eq('meeting_id', meetingId),
       supabase.from('board_groups').select('id, title').eq('meeting_id', meetingId),
       supabase.from('decisions').select('text').eq('meeting_id', meetingId),
-      supabase.from('tasks').select('title, assignee_id').eq('meeting_id', meetingId)
+      supabase.from('tasks').select('title, assignee_id').eq('meeting_id', meetingId),
+      supabase.from('meeting_memories').select('summary, facts').eq('meeting_id', meetingId).maybeSingle()
     ]);
 
     if (!meeting) {
@@ -646,7 +606,7 @@ server.post(
         name: p.profiles?.name || 'Unknown',
         role: p.role
       })),
-      messages: (messages || []).map((m: any) => ({
+      messages: (messages || []).slice(-12).map((m: any) => ({
         authorId: m.author_id,
         content: m.content,
         createdAt: m.created_at
@@ -660,11 +620,12 @@ server.post(
       currentVote: null,
       decisions: (decisions || []).map((d: any) => ({ text: d.text })),
       tasks: (tasks || []).map((t: any) => ({ title: t.title, assigneeId: t.assignee_id })),
-      excalidrawElements: excalidrawElements || []
+      excalidrawElements: (excalidrawElements || []).slice(-80), memory: memory || { summary: '', facts: [] }
     };
 
     try {
       const analysis = await analyzeMeeting(ctx);
+      await supabase.from('meeting_memories').upsert({ meeting_id: meetingId, summary: analysis.summary, facts: analysis.observations.slice(0, 8), updated_at: new Date().toISOString() });
 
       // If Claude suggests grouping, apply it to Supabase + broadcast
       if (analysis.groups && analysis.groups.length > 0) {
@@ -757,6 +718,37 @@ server.post(
   }
 );
 
+server.post('/api/meetings/:meetingId/board-proposal', { preHandler: requireAuth, schema: { body: z.object({ prompt: z.string().min(3).max(1000) }) } }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const { prompt } = request.body as { prompt: string };
+  const { data: meeting } = await supabase.from('meetings').select('title, objective, expected_outcome').eq('id', meetingId).single();
+  if (!meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Meeting not found' } });
+  const proposal = await generateBoardProposal({ meeting: { title: meeting.title, objective: meeting.objective, expectedOutcome: meeting.expected_outcome }, prompt });
+  return reply.send({ success: true, data: proposal });
+});
+
+server.post('/api/meetings/:meetingId/mermaid-proposal', { preHandler: requireAuth, schema: { body: z.object({ prompt: z.string().min(3).max(1000) }) } }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string }; const { prompt } = request.body as { prompt: string };
+  const { data: meeting } = await supabase.from('meetings').select('objective').eq('id', meetingId).single();
+  if (!meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Meeting not found' } });
+  return reply.send({ success: true, data: { mermaid: await generateMermaidDiagram({ meeting, prompt }) } });
+});
+
+server.get('/api/meetings/:meetingId/artifacts', { preHandler: requireAuth }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string };
+  const { data, error } = await supabase.from('meeting_artifacts').select('*').eq('meeting_id', meetingId).order('created_at', { ascending: true });
+  if (error) throw new Error(error.message); return reply.send({ success: true, data: data || [] });
+});
+
+server.post('/api/meetings/:meetingId/artifacts/impact-effort', { preHandler: requireAuth, schema: { body: z.object({ prompt: z.string().min(3).max(1000) }) } }, async (request: any, reply) => {
+  const { meetingId } = request.params as { meetingId: string }; const { prompt } = request.body as { prompt: string };
+  const [{ data: meeting }, { data: cards }] = await Promise.all([supabase.from('meetings').select('objective').eq('id', meetingId).single(), supabase.from('board_cards').select('text').eq('meeting_id', meetingId)]);
+  if (!meeting) return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Meeting not found' } });
+  const artifact = await generateImpactEffortArtifact({ objective: meeting.objective, prompt, cards: (cards || []).map((card: any) => card.text) });
+  const { data, error } = await supabase.from('meeting_artifacts').insert({ meeting_id: meetingId, type: 'impact_effort_matrix', title: artifact.title, data: artifact, created_by: request.user.id }).select().single();
+  if (error) throw new Error(error.message); return reply.status(201).send({ success: true, data });
+});
+
 // POST /api/meetings/:meetingId/group-facilitate — AimLy responds using the shared conversation
 server.post('/api/meetings/:meetingId/group-facilitate', { preHandler: requireAuth }, async (request: any, reply) => {
   const { meetingId } = request.params as { meetingId: string };
@@ -775,7 +767,7 @@ server.post('/api/meetings/:meetingId/group-facilitate', { preHandler: requireAu
       cards: cards || []
     });
     return reply.send({ success: true, data: { text } });
-  } catch (error: any) {
+  } catch {
     return reply.status(503).send({ success: false, error: { code: 'AI_UNAVAILABLE', message: 'AimLy no pudo intervenir ahora mismo.' } });
   }
 });
@@ -961,7 +953,7 @@ server.post('/api/meetings/:meetingId/task-suggestions', { preHandler: requireAu
       participants: (participants || []).map((p: any) => ({ id: p.user_id, name: p.profiles?.name || 'Participante' }))
     });
     return reply.send({ success: true, data: suggestions.tasks });
-  } catch (error: any) {
+  } catch {
     return reply.status(503).send({ success: false, error: { code: 'AI_UNAVAILABLE', message: 'AimLy no pudo proponer tareas ahora mismo.' } });
   }
 });

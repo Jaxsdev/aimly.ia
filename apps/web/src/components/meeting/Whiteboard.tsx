@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Excalidraw } from '@excalidraw/excalidraw';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { convertToExcalidrawElements, Excalidraw } from '@excalidraw/excalidraw';
+import { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { 
-  MousePointer2, StickyNote, Type, Trash2, Edit3, Plus, 
-  Check, X, Sparkles, Move, LayoutGrid, PenTool, Target
+  MousePointer2, StickyNote, Trash2, Edit3, Plus,
+  Check, X, Move, PenTool, Target
 } from 'lucide-react';
 import { useMeeting } from '../../contexts/MeetingContext';
 import { api } from '../../lib/api';
-import { sendPortalEvent } from '../../realtime/portal.client';
 
 type BoardViewMode = 'excalidraw' | 'stickyNotes';
 
@@ -19,13 +19,14 @@ const COLOR_PALETTE = [
 ];
 
 export function Whiteboard() {
-  const { meeting, cards, createCard, updateCard, refreshMeeting, collaborators, stickyCursors } = useMeeting();
+  const { meeting, cards, createCard, updateCard, collaborators, stickyCursors } = useMeeting();
   
   // View Mode: 'excalidraw' (Motor completo estilo Obsidian/Excalidraw) or 'stickyNotes' (Notas adhesivas)
   const [viewMode, setViewMode] = useState<BoardViewMode>('excalidraw');
   const [initialElements, setInitialElements] = useState<any[] | null>(null);
   const latestElementsRef = useRef<readonly any[]>([]);
   const persistTimerRef = useRef<number | undefined>(undefined);
+  const [boardProposal, setBoardProposal] = useState<{ title: string; base: any[]; elements: any[]; files?: any } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +69,66 @@ export function Whiteboard() {
       api.updateScene({ collaborators });
     }
   }, [collaborators]);
+
+  useEffect(() => {
+    const createTextElement = (text: string, x: number, y: number, fontSize: number) => ({
+      id: crypto.randomUUID(), type: 'text', x, y, width: Math.max(140, text.length * (fontSize * 0.55)), height: fontSize * 1.4,
+      angle: 0, strokeColor: '#1e1e1e', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1, strokeStyle: 'dashed',
+      roughness: 1, opacity: 55, groupIds: [], frameId: null, roundness: null, seed: Math.floor(Math.random() * 2147483647),
+      version: 1, versionNonce: Math.floor(Math.random() * 2147483647), isDeleted: false, boundElements: null,
+      updated: Date.now(), link: null, locked: false, fontSize, fontFamily: 1, text, textAlign: 'left', verticalAlign: 'top',
+      containerId: null, originalText: text, autoResize: true, lineHeight: 1.25, baseline: fontSize
+    });
+    const onProposal = (event: Event) => {
+      const detail = (event as CustomEvent<{ title: string; notes: string[] }>).detail;
+      const excalidraw = (window as any).excalidrawAPI;
+      if (!detail || !excalidraw) return;
+      const base = [...(excalidraw.getSceneElementsIncludingDeleted() || [])];
+      const generated = [createTextElement(detail.title, 160, 120, 30), ...detail.notes.map((note, index) => createTextElement(`• ${note}`, 180, 190 + index * 62, 20))];
+      excalidraw.updateScene({ elements: [...base, ...generated] });
+      setBoardProposal({ title: detail.title, base, elements: generated });
+    };
+    window.addEventListener('aimly:board-proposal', onProposal);
+    const onMermaidProposal = async (event: Event) => {
+      const code = (event as CustomEvent<{ mermaid: string }>).detail?.mermaid;
+      const excalidraw = (window as any).excalidrawAPI;
+      if (!code || !excalidraw) return;
+      try {
+        const base = [...(excalidraw.getSceneElementsIncludingDeleted() || [])];
+        const parsed = await parseMermaidToExcalidraw(code, { flowchart: { curve: 'linear' } });
+        // Mermaid returns skeletons. Convert them to complete Excalidraw elements so
+        // their text labels, bindings and arrows render correctly.
+        const elements = convertToExcalidrawElements(parsed.elements as any[], { regenerateIds: false }).map((element: any) => ({
+          ...element, x: element.x + 120, y: element.y + 100,
+          // Keep Mermaid's container/text IDs intact: Excalidraw uses them to
+          // bind each editable label to its node.
+          opacity: element.type === 'text' ? 100 : 55,
+          strokeStyle: element.type === 'text' ? 'solid' : 'dashed', locked: false
+        }));
+        excalidraw.updateScene({ elements: [...base, ...elements], files: parsed.files });
+        setBoardProposal({ title: 'Diagrama de flujo', base, elements, files: parsed.files });
+      } catch (error) { console.error('[AimLy] Mermaid inválido.', error); alert('No se pudo convertir el flujo a la pizarra.'); }
+    };
+    window.addEventListener('aimly:mermaid-proposal', onMermaidProposal);
+    return () => { window.removeEventListener('aimly:board-proposal', onProposal); window.removeEventListener('aimly:mermaid-proposal', onMermaidProposal); };
+  }, []);
+
+  const applyBoardProposal = () => {
+    if (!boardProposal) return;
+    const excalidraw = (window as any).excalidrawAPI;
+    const elements = [...boardProposal.base, ...boardProposal.elements];
+    latestElementsRef.current = elements;
+    excalidraw?.updateScene({ elements, files: boardProposal.files });
+    (window as any).broadcastDelta?.(elements);
+    scheduleScenePersistence();
+    setBoardProposal(null);
+  };
+
+  const discardBoardProposal = () => {
+    const excalidraw = (window as any).excalidrawAPI;
+    if (boardProposal) excalidraw?.updateScene({ elements: boardProposal.base });
+    setBoardProposal(null);
+  };
 
   // Sticky notes state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -117,14 +178,14 @@ export function Whiteboard() {
     setEditingCardId(null);
   };
 
-  const handleDeleteCard = async (id: string) => {
+  const handleDeleteCard = useCallback(async (id: string) => {
     try {
       await updateCard(id, { text: '[Eliminada]' });
       setSelectedCardId(null);
     } catch (err) {
       console.error('Error deleting card:', err);
     }
-  };
+  }, [updateCard]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -138,7 +199,7 @@ export function Whiteboard() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedCardId, editingCardId]);
+  }, [selectedCardId, editingCardId, handleDeleteCard]);
 
   return (
     <div className="flex-1 h-full bg-[#FCFAf7] relative overflow-hidden flex flex-col">
@@ -164,6 +225,7 @@ export function Whiteboard() {
         </button>
       </div>
       {meeting?.objective && <div className="absolute left-4 right-4 top-14 z-20 flex items-center gap-2 rounded-xl border border-aimly-border/80 bg-white/90 px-3 py-1.5 text-xs text-aimly-text/70 shadow-sm backdrop-blur pointer-events-none"><Target size={14} className="shrink-0 text-aimly-orange" /><span className="font-semibold text-aimly-text">Objetivo:</span><span className="truncate">{meeting.objective}</span></div>}
+      {boardProposal && <div className="absolute right-4 top-20 z-40 w-72 rounded-2xl border border-aimly-orange/30 bg-white p-3 shadow-xl"><p className="text-xs font-bold text-aimly-text">Propuesta de AimLy: {boardProposal.title}</p><p className="mt-1 text-[11px] text-aimly-text/60">El texto punteado es una vista previa. ¿Deseas añadirlo a la pizarra?</p><div className="mt-3 flex gap-2"><button onClick={applyBoardProposal} className="flex-1 rounded-lg bg-aimly-orange py-2 text-xs font-bold text-white">Aplicar</button><button onClick={discardBoardProposal} className="flex-1 rounded-lg border border-aimly-border py-2 text-xs font-bold text-aimly-text">Descartar</button></div></div>}
 
       {/* ── MODE 1: EXCALIDRAW ENGINE ── */}
       {viewMode === 'excalidraw' && (
@@ -195,7 +257,7 @@ export function Whiteboard() {
                 // Save to local storage asynchronously
                 try {
                   localStorage.setItem(`excalidraw_scene_${meeting.id}`, JSON.stringify(elements));
-                } catch (e) {}
+                } catch {}
 
                 // Only broadcast strokes if this is a local change, not an incoming sync!
                 if (!(window as any).isIncomingSync) {

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { Card, Input } from '../components/ui';
 import { Target, Sparkles, Clock, CheckCircle2 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function CreateMeetingPage() {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
   const [isCreating, setIsCreating] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -15,6 +17,9 @@ export default function CreateMeetingPage() {
     expectedOutcome: 'Una idea seleccionada y tres tareas iniciales asignadas.',
     durationMinutes: 20,
   });
+
+  if (loading) return null;
+  if (!user) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +31,7 @@ export default function CreateMeetingPage() {
         expectedOutcome: formData.expectedOutcome,
         durationMinutes: Number(formData.durationMinutes)
       });
-      navigate(`/meeting/${(meeting as any).id}`);
+      navigate(`/meeting/${(meeting as any).id}/lobby`);
     } catch (error) {
       console.error('Error creating meeting:', error);
       alert('Error al crear la reunión');

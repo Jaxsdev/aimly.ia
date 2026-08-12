@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { MeetingHeader } from '../components/meeting/MeetingHeader';
 import { LeftPanel } from '../components/meeting/LeftPanel';
 import { Whiteboard } from '../components/meeting/Whiteboard';
@@ -10,7 +10,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { CallAudio, VideoGrid } from '../components/meeting/VideoGrid';
 import { CallControls } from '../components/meeting/CallControls';
-import { WaitingLobby } from '../components/meeting/WaitingLobby';
 
 function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
   const { user, loading: authLoading, signInWithPassword, signUp } = useAuth();
@@ -22,6 +21,13 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const { meetingId } = useParams();
+  const {
+    isInCall, localStream, screenStream, audioOn, isSpeaking, videoOn,
+    isScreenSharing, peers, joinCall, leaveCall, toggleAudio, toggleVideo,
+    toggleScreenShare
+  } = useWebRTC(meetingId || '');
+  const [viewMode, setViewMode] = useState<'board' | 'grid'>('board');
 
   React.useEffect(() => {
     const timer = setTimeout(() => setForceReady(true), 1000);
@@ -148,31 +154,16 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
     );
   }
 
-  const { meetingId } = useParams();
-  const {
-    isInCall,
-    localStream,
-    screenStream,
-    audioOn,
-    isSpeaking,
-    videoOn,
-    isScreenSharing,
-    peers,
-    joinCall,
-    leaveCall,
-    toggleAudio,
-    toggleVideo,
-    toggleScreenShare
-  } = useWebRTC(meetingId || '');
-
-  const [viewMode, setViewMode] = useState<'board' | 'grid'>('board');
-
   if (loading && !forceReady) {
     return (
       <div className="h-screen w-full bg-aimly-bg flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-aimly-orange"></div>
       </div>
     );
+  }
+
+  if (meeting?.status === 'draft') {
+    return <Navigate to={`/meeting/${meetingId}/lobby`} replace />;
   }
 
   return (
@@ -212,7 +203,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
           <AimLyPanel />
 
           {/* Quick Floating Grid Toggle when Call is active */}
-          {false && isInCall && (
+          {isInCall && (
             <button
               onClick={() => setViewMode('grid')}
               className="absolute top-4 right-4 z-30 bg-gray-900/90 text-white border border-gray-800 px-3 py-2 rounded-xl text-xs font-bold shadow-xl flex items-center gap-2 hover:bg-gray-800 transition-all"
@@ -237,7 +228,6 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
         onToggleVideo={toggleVideo}
         onToggleScreenShare={toggleScreenShare}
       />}
-      {meeting?.status === 'draft' && <WaitingLobby />}
     </div>
   );
 }

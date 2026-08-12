@@ -4,6 +4,7 @@ import LandingPage from './pages/LandingPage';
 import HomePage from './pages/HomePage';
 import CreateMeetingPage from './pages/CreateMeetingPage';
 import MeetingRoomPage from './pages/MeetingRoomPage';
+import MeetingLobbyPage from './pages/MeetingLobbyPage';
 import MeetingResultPage from './pages/MeetingResultPage';
 import { Portal } from '@portalsdk/core';
 import { PortalProvider } from '@portalsdk/react';
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/home" element={<HomePage />} />
             <Route path="/meetings/new" element={<CreateMeetingPage />} />
+            <Route path="/meeting/:meetingId/lobby" element={<MeetingLobbyPage />} />
             <Route path="/meeting/:meetingId" element={<MeetingRoomPage />} />
             <Route path="/meeting/:meetingId/result" element={<MeetingResultPage />} />
             {/* Fallback route */}

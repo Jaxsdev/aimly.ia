@@ -36,6 +36,16 @@ export const TaskSuggestionsSchema = z.object({
   }))
 });
 
+export const BoardProposalSchema = z.object({
+  title: z.string().min(1).max(120),
+  notes: z.array(z.string().min(1).max(240)).min(1).max(6)
+});
+
+export const ImpactEffortArtifactSchema = z.object({
+  title: z.string().min(1).max(120),
+  items: z.array(z.object({ label: z.string().min(1).max(160), impact: z.number().int().min(1).max(10), effort: z.number().int().min(1).max(10) })).min(2).max(12)
+});
+
 export const MeetingSummarySchema = z.object({
   summary: z.string(),
   keyPoints: z.array(z.string()),
@@ -45,6 +55,8 @@ export const MeetingSummarySchema = z.object({
 
 export type AimLyAnalysis = z.infer<typeof AimLyAnalysisSchema>;
 export type TaskSuggestions = z.infer<typeof TaskSuggestionsSchema>;
+export type BoardProposal = z.infer<typeof BoardProposalSchema>;
+export type ImpactEffortArtifact = z.infer<typeof ImpactEffortArtifactSchema>;
 export type MeetingSummaryOutput = z.infer<typeof MeetingSummarySchema>;
 
 // ============================================================
@@ -131,6 +143,30 @@ export async function analyzeMeeting(ctx: MeetingContext): Promise<AimLyAnalysis
   
   const parsed = JSON.parse(jsonText);
   return AimLyAnalysisSchema.parse(parsed);
+}
+
+export async function generateBoardProposal(ctx: { meeting: { title: string; objective: string; expectedOutcome: string }; prompt: string }): Promise<BoardProposal> {
+  const response = await anthropic.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 700,
+    system: `${SYSTEM_PROMPT}\nCreate a concise whiteboard proposal. Return only JSON.`,
+    messages: [{ role: 'user', content: `Solicitud: ${ctx.prompt}\nObjetivo: ${ctx.meeting.objective}\nResultado esperado: ${ctx.meeting.expectedOutcome}\n\nDevuelve exactamente: {"title": string, "notes": string[]} con 2 a 6 notas breves en español.` }]
+  });
+  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
+  return BoardProposalSchema.parse(JSON.parse((jsonMatch[1] || text).trim()));
+}
+
+export async function generateMermaidDiagram(ctx: { meeting: { objective: string }; prompt: string }): Promise<string> {
+  const response = await anthropic.messages.create({ model: CLAUDE_MODEL, max_tokens: 900, system: 'Return only valid Mermaid flowchart code. Use flowchart TD, concise Spanish labels, and no markdown fences.', messages: [{ role: 'user', content: `Objetivo: ${ctx.meeting.objective}\nSolicitud: ${ctx.prompt}` }] });
+  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  return text.replace(/```mermaid|```/g, '').trim();
+}
+
+export async function generateImpactEffortArtifact(ctx: { objective: string; prompt: string; cards: string[] }): Promise<ImpactEffortArtifact> {
+  const response = await anthropic.messages.create({ model: CLAUDE_MODEL, max_tokens: 900, system: 'Return only valid JSON in Spanish.', messages: [{ role: 'user', content: `Crea una matriz impacto/esfuerzo. Objetivo: ${ctx.objective}. Petición: ${ctx.prompt}. Ideas: ${ctx.cards.slice(0, 20).join(' | ')}. Devuelve {"title":string,"items":[{"label":string,"impact":1-10,"effort":1-10}]}.` }] });
+  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  return ImpactEffortArtifactSchema.parse(JSON.parse(text.replace(/```json|```/g, '').trim()));
 }
 
 // ============================================================

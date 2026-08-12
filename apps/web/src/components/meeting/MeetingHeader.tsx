@@ -1,12 +1,10 @@
 import React from 'react';
-import { Flag, Edit2, Users, MoreHorizontal, Wifi, WifiOff } from 'lucide-react';
+import { Flag, Edit2, Users, MoreHorizontal } from 'lucide-react';
 import { Badge, Avatar } from '../ui';
 import { useMeeting } from '../../contexts/MeetingContext';
-import { useAuth } from '../../contexts/AuthContext';
 
 export function MeetingHeader({ onFinish }: { onFinish: () => void }) {
   const { meeting, participants, isConnected } = useMeeting();
-  const { user } = useAuth();
 
   // Format time remaining
   const now = new Date();
@@ -38,7 +36,7 @@ export function MeetingHeader({ onFinish }: { onFinish: () => void }) {
           </Badge>
         ) : (
           <Badge className="bg-amber-100 text-amber-700 gap-1 pl-1.5 hidden md:flex">
-            <WifiOff size={12} />
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 8.82a15 15 0 0 1 3.94-2.7"/><path d="M10.66 5.05A16 16 0 0 1 22 8.82"/><path d="M7.5 12.5a10 10 0 0 1 1.47-.84"/><path d="M14.53 11.66A10 10 0 0 1 18.5 12.5"/><path d="M12 18h.01"/><path d="m2 2 20 20"/></svg>
             Reconectando…
           </Badge>
         )}

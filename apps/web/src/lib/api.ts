@@ -2,28 +2,11 @@ import { getAccessToken } from '../lib/supabase.js';
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://aimly-api.onrender.com' : 'http://localhost:3001');
 
-function isValidUUID(str?: string): boolean {
-  if (!str) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-}
-
 async function authHeaders(hasBody: boolean): Promise<Record<string, string>> {
   const token = await getAccessToken().catch(() => null);
-  let guestId = '';
-  let guestName = '';
-  try {
-    const raw = localStorage.getItem('aimly_guest_user');
-    if (raw) {
-      const g = JSON.parse(raw);
-      guestId = g.id || '';
-      guestName = g.name || '';
-    }
-  } catch (e) {}
-
   return {
     ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-    Authorization: token ? `Bearer ${token}` : 'Bearer guest_token',
-    ...(guestId ? { 'X-Guest-Id': guestId, 'X-Guest-Name': guestName } : {})
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 }
 
@@ -134,11 +117,18 @@ export const api = {
       apiRequest<any[]>('POST', `/api/meetings/${meetingId}/tasks`, { tasks })
   },
 
+  artifacts: {
+    list: (meetingId: string) => apiRequest<any[]>('GET', `/api/meetings/${meetingId}/artifacts`),
+    createImpactEffort: (meetingId: string, prompt: string) => apiRequest<any>('POST', `/api/meetings/${meetingId}/artifacts/impact-effort`, { prompt })
+  },
+
   aimly: {
     analyze: (meetingId: string, excalidrawElements?: any[]) => apiRequest('POST', `/api/meetings/${meetingId}/analyze`, { excalidrawElements }),
     chat: (meetingId: string, prompt: string, history?: Array<{ role: 'user' | 'assistant'; content: string }>, excalidrawElements?: any[]) =>
       apiRequest('POST', `/api/meetings/${meetingId}/ai-chat`, { prompt, history, excalidrawElements }),
     facilitateGroup: (meetingId: string) => apiRequest<{ text: string }>('POST', `/api/meetings/${meetingId}/group-facilitate`),
     suggestTasks: (meetingId: string) => apiRequest<Array<{ title: string; description: string; suggestedAssigneeId?: string }>>('POST', `/api/meetings/${meetingId}/task-suggestions`)
+    ,boardProposal: (meetingId: string, prompt: string) => apiRequest<{ title: string; notes: string[] }>('POST', `/api/meetings/${meetingId}/board-proposal`, { prompt })
+    ,mermaidProposal: (meetingId: string, prompt: string) => apiRequest<{ mermaid: string }>('POST', `/api/meetings/${meetingId}/mermaid-proposal`, { prompt })
   }
 };

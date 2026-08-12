@@ -12,6 +12,7 @@
   "dependencies": {
     "@aimly/shared": "*",
     "@excalidraw/excalidraw": "^0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "^2.2.2",
     "@portalsdk/core": "^0.1.5",
     "@portalsdk/react": "^0.1.4",
     "@supabase/supabase-js": "^2.45.1",
