@@ -6,6 +6,8 @@ import CreateMeetingPage from './pages/CreateMeetingPage';
 import MeetingRoomPage from './pages/MeetingRoomPage';
 import MeetingLobbyPage from './pages/MeetingLobbyPage';
 import MeetingResultPage from './pages/MeetingResultPage';
+import TasksPage from './pages/TasksPage';
+import DecisionsPage from './pages/DecisionsPage';
 import { Portal } from '@portalsdk/core';
 import { PortalProvider } from '@portalsdk/react';
 import { AuthProvider } from './contexts/AuthContext';
@@ -39,6 +41,8 @@ export default function App() {
             <Route path="/meeting/:meetingId/lobby" element={<MeetingLobbyPage />} />
             <Route path="/meeting/:meetingId" element={<MeetingRoomPage />} />
             <Route path="/meeting/:meetingId/result" element={<MeetingResultPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/decisions" element={<DecisionsPage />} />
             {/* Fallback route */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

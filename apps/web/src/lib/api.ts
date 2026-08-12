@@ -110,13 +110,17 @@ export const api = {
 
   decisions: {
     create: (meetingId: string, body: { text: string; sourceVoteId?: string }) =>
-      apiRequest('POST', `/api/meetings/${meetingId}/decisions`, body)
+      apiRequest('POST', `/api/meetings/${meetingId}/decisions`, body),
+    listAll: () => apiRequest<any[]>('GET', '/api/decisions')
   },
 
   tasks: {
     list: (meetingId: string) => apiRequest<any[]>('GET', `/api/meetings/${meetingId}/tasks`),
+    listAll: () => apiRequest<any[]>('GET', '/api/tasks'),
     create: (meetingId: string, tasks: Array<{ title: string; description?: string; assigneeId?: string; sourceDecisionId?: string }>) =>
-      apiRequest<any[]>('POST', `/api/meetings/${meetingId}/tasks`, { tasks })
+      apiRequest<any[]>('POST', `/api/meetings/${meetingId}/tasks`, { tasks }),
+    updateStatus: (taskId: string, status: 'todo' | 'in_progress' | 'done') =>
+      apiRequest<any>('PATCH', `/api/tasks/${taskId}/status`, { status })
   },
 
   artifacts: {
