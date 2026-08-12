@@ -261,9 +261,9 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             }
 
             (window as any).isIncomingSync = true;
-            const api = (window as any).excalidrawAPI;
-            const currentElements = api.getSceneElementsIncludingDeleted() || [];
-            const appState = api.getAppState();
+            const excalidrawApi = (window as any).excalidrawAPI;
+            const currentElements = excalidrawApi.getSceneElementsIncludingDeleted() || [];
+            const appState = excalidrawApi.getAppState();
             const merged = reconcileElements(currentElements as any, payload.deltas as any, appState as any);
             for (const element of payload.deltas) {
               knownElementsRef.current.set(element.id, element.version || 0);
@@ -272,7 +272,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
               localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
             } catch {}
 
-            api.updateScene({ elements: merged, files: { ...(api.getFiles?.() || {}), ...(payload.files || {}) }, captureUpdate: CaptureUpdateAction.NEVER });
+            excalidrawApi.updateScene({ elements: merged, files: { ...(excalidrawApi.getFiles?.() || {}), ...(payload.files || {}) }, captureUpdate: CaptureUpdateAction.NEVER });
             const hasImageWithoutFile = payload.deltas.some((element: any) => element.type === 'image' && element.fileId && !payload.files?.[element.fileId]);
             if (hasImageWithoutFile) {
               // Large images are persisted through the API instead of exceeding the
