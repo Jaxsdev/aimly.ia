@@ -58,6 +58,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [sharedMusic, setSharedMusicState] = useState<SharedMusicState | null>(null);
+  const userId = user?.id;
 
   const knownElementsRef = useRef<Map<string, number>>(new Map());
 
@@ -75,7 +76,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const fetchAll = useCallback(async () => {
     if (!meetingId) return;
     try {
-      if (user) {
+      if (userId) {
         await api.meetings.join(meetingId).catch(console.warn);
       }
 
@@ -113,13 +114,13 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
     } finally {
       setLoading(false);
     }
-  }, [meetingId, user]);
+  }, [meetingId, userId]);
 
   // ── Supabase Realtime subscription ─────────────────────────
   useEffect(() => {
     if (!meetingId) return;
 
-    if (!user) return;
+    if (!userId) return;
 
     fetchAll();
 
@@ -127,7 +128,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
     const channel = supabase
       .channel(`meeting:${meetingId}`, {
         config: {
-          presence: { key: user.id }
+          presence: { key: userId }
         }
       })
 
@@ -238,7 +239,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       })
 
       .on('broadcast', { event: 'sticky_cursor' }, ({ payload }) => {
-        if (!payload?.userId || payload.userId === user.id) return;
+        if (!payload?.userId || payload.userId === userId) return;
         setStickyCursors(prev => {
           const next = new Map(prev);
           next.set(payload.userId, { x: payload.x, y: payload.y, name: payload.name || 'Compañero' });
@@ -291,7 +292,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
 
       // ── Realtime Mouse Cursors Sync ──────────────────────────
       .on('broadcast', { event: 'mouse_move' }, ({ payload }) => {
-        if (payload?.userId && payload.userId !== user.id) {
+        if (payload?.userId && payload.userId !== userId) {
           setCollaborators(prev => {
             const next = new Map(prev);
             next.set(payload.userId, {
@@ -327,7 +328,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
           setIsConnected(true);
           // Track presence: broadcast our own info
           await channel.track({
-            userId: user.id,
+            userId,
             name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario',
             avatarUrl: (user as any).user_metadata?.avatar_url,
             joinedAt: new Date().toISOString()
@@ -370,7 +371,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             y: pointer.y,
             tool: pointer.tool || 'pointer',
             button,
-            userId: user.id,
+              userId,
             name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
           });
         }
@@ -384,7 +385,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       sendBroadcast('sticky_cursor', {
         x,
         y,
-        userId: user.id,
+        userId,
         name: (user as any).user_metadata?.full_name || user.email?.split('@')[0] || 'Compañero'
       });
     };
@@ -466,7 +467,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       channelReadyRef.current = false;
       setIsConnected(false);
     };
-  }, [meetingId, user, authLoading, fetchAll]);
+  }, [meetingId, userId, user?.email, user?.user_metadata?.full_name, user?.user_metadata?.avatar_url, authLoading, fetchAll]);
 
   // ── Mutations ───────────────────────────────────────────────
 

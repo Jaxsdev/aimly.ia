@@ -27,7 +27,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      setUser(nextSession?.user ?? null);
+      // TOKEN_REFRESHED often happens after returning to a browser tab. Keep
+      // the existing User object when it represents the same account so room
+      // providers do not tear down and recreate their realtime channels.
+      setUser((currentUser) => currentUser?.id === nextSession?.user?.id ? currentUser : (nextSession?.user ?? null));
     });
 
     return () => subscription.unsubscribe();
