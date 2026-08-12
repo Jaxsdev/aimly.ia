@@ -239,6 +239,8 @@ create table if not exists public.excalidraw_scenes (
   updated_at  timestamptz not null default now()
 );
 
+alter table public.excalidraw_scenes add column if not exists files jsonb not null default '{}'::jsonb;
+
 alter table public.excalidraw_scenes enable row level security;
 
 create policy "Participants can view Excalidraw scenes"

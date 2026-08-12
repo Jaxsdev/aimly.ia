@@ -24,7 +24,9 @@ export function Whiteboard() {
   // View Mode: 'excalidraw' (Motor completo estilo Obsidian/Excalidraw) or 'stickyNotes' (Notas adhesivas)
   const [viewMode, setViewMode] = useState<BoardViewMode>('excalidraw');
   const [initialElements, setInitialElements] = useState<any[] | null>(null);
+  const [initialFiles, setInitialFiles] = useState<Record<string, any>>({});
   const latestElementsRef = useRef<readonly any[]>([]);
+  const latestFilesRef = useRef<Record<string, any>>({});
   const persistTimerRef = useRef<number | undefined>(undefined);
   const [boardProposal, setBoardProposal] = useState<{ title: string; base: any[]; elements: any[]; files?: any } | null>(null);
 
@@ -34,7 +36,10 @@ export function Whiteboard() {
 
     api.excalidraw.getScene(meeting.id)
       .then((scene) => {
-        if (!cancelled) setInitialElements(Array.isArray(scene.elements) ? scene.elements : []);
+        if (!cancelled) {
+          setInitialElements(Array.isArray(scene.elements) ? scene.elements : []);
+          setInitialFiles(scene.files || {});
+        }
       })
       .catch((error) => {
         console.warn('[Whiteboard] Could not load shared scene; using local recovery copy.', error);
@@ -57,7 +62,7 @@ export function Whiteboard() {
     if (!meeting?.id || (window as any).isIncomingSync) return;
     if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
     persistTimerRef.current = window.setTimeout(() => {
-      api.excalidraw.saveScene(meeting.id, latestElementsRef.current)
+      api.excalidraw.saveScene(meeting.id, latestElementsRef.current, latestFilesRef.current)
         .catch((error) => console.warn('[Whiteboard] Could not persist shared scene.', error));
     }, 1200);
   };
@@ -119,7 +124,7 @@ export function Whiteboard() {
     const elements = [...boardProposal.base, ...boardProposal.elements];
     latestElementsRef.current = elements;
     excalidraw?.updateScene({ elements, files: boardProposal.files });
-    (window as any).broadcastDelta?.(elements);
+    (window as any).broadcastDelta?.(elements, boardProposal.files || {});
     scheduleScenePersistence();
     setBoardProposal(null);
   };
@@ -246,13 +251,15 @@ export function Whiteboard() {
             theme="light"
             isCollaborating
             initialData={{
-              elements: initialElements
+              elements: initialElements,
+              files: initialFiles
             }}
             excalidrawAPI={(api) => {
               (window as any).excalidrawAPI = api;
             }}
-            onChange={(elements) => {
+            onChange={(elements, _appState, files) => {
               latestElementsRef.current = elements;
+              latestFilesRef.current = files || {};
               if (meeting?.id) {
                 // Save to local storage asynchronously
                 try {
@@ -265,7 +272,7 @@ export function Whiteboard() {
                   if (now - ((window as any).lastExcalidrawBroadcast || 0) > 30) {
                     (window as any).lastExcalidrawBroadcast = now;
                     if ((window as any).broadcastDelta) {
-                      (window as any).broadcastDelta(elements);
+                      (window as any).broadcastDelta(elements, files || {});
                     }
                   }
                 }

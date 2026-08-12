@@ -41,7 +41,8 @@ const updateMeetingFocusSchema = z.object({
 const participantReadySchema = z.object({ isReady: z.boolean() });
 
 const saveExcalidrawSceneSchema = z.object({
-  elements: z.array(z.unknown()).max(5000)
+  elements: z.array(z.unknown()).max(5000),
+  files: z.record(z.string(), z.unknown()).default({})
 });
 
 const createVoteSchema = z.object({
@@ -66,6 +67,7 @@ type CastVoteInput = z.infer<typeof castVoteSchema>;
 // ============================================================
 
 const server = Fastify({
+  bodyLimit: 12 * 1024 * 1024,
   logger: {
     transport: {
       target: 'pino-pretty',
@@ -452,11 +454,11 @@ server.get(
     const { meetingId } = request.params as { meetingId: string };
     const { data, error } = await supabase
       .from('excalidraw_scenes')
-      .select('elements, updated_at')
+      .select('elements, files, updated_at')
       .eq('meeting_id', meetingId)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return reply.send({ success: true, data: data || { elements: [], updated_at: null } });
+    return reply.send({ success: true, data: data || { elements: [], files: {}, updated_at: null } });
   }
 );
 
@@ -548,11 +550,11 @@ server.put(
   { preHandler: requireAuth, schema: { body: saveExcalidrawSceneSchema } },
   async (request: any, reply) => {
     const { meetingId } = request.params as { meetingId: string };
-    const { elements } = request.body as z.infer<typeof saveExcalidrawSceneSchema>;
+    const { elements, files } = request.body as z.infer<typeof saveExcalidrawSceneSchema>;
     const { data, error } = await supabase
       .from('excalidraw_scenes')
-      .upsert({ meeting_id: meetingId, elements, updated_by: request.user.id, updated_at: new Date().toISOString() })
-      .select('elements, updated_at')
+      .upsert({ meeting_id: meetingId, elements, files, updated_by: request.user.id, updated_at: new Date().toISOString() })
+      .select('elements, files, updated_at')
       .single();
     if (error) throw new Error(error.message);
     return reply.send({ success: true, data });

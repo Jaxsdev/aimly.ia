@@ -90,9 +90,9 @@ export const api = {
   },
 
   excalidraw: {
-    getScene: (meetingId: string) => apiRequest<{ elements: any[]; updated_at: string | null }>('GET', `/api/meetings/${meetingId}/excalidraw-scene`),
-    saveScene: (meetingId: string, elements: readonly any[]) =>
-      apiRequest('PUT', `/api/meetings/${meetingId}/excalidraw-scene`, { elements })
+    getScene: (meetingId: string) => apiRequest<{ elements: any[]; files: Record<string, any>; updated_at: string | null }>('GET', `/api/meetings/${meetingId}/excalidraw-scene`),
+    saveScene: (meetingId: string, elements: readonly any[], files: Record<string, any>) =>
+      apiRequest('PUT', `/api/meetings/${meetingId}/excalidraw-scene`, { elements, files })
   },
 
   votes: {

@@ -256,6 +256,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
                 ...((window as any).pendingDeltas || []),
                 ...payload.deltas
               ];
+              (window as any).pendingDeltaFiles = { ...((window as any).pendingDeltaFiles || {}), ...(payload.files || {}) };
               return;
             }
 
@@ -271,7 +272,15 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
               localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
             } catch {}
 
-            api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
+            api.updateScene({ elements: merged, files: { ...(api.getFiles?.() || {}), ...(payload.files || {}) }, captureUpdate: CaptureUpdateAction.NEVER });
+            const hasImageWithoutFile = payload.deltas.some((element: any) => element.type === 'image' && element.fileId && !payload.files?.[element.fileId]);
+            if (hasImageWithoutFile) {
+              // Large images are persisted through the API instead of exceeding the
+              // Realtime broadcast limit. Retrieve the durable files once saved.
+              window.setTimeout(() => api.excalidraw.getScene(meetingId)
+                .then((scene: { files?: Record<string, any> }) => (window as any).excalidrawAPI?.updateScene({ files: { ...((window as any).excalidrawAPI.getFiles?.() || {}), ...(scene.files || {}) }, captureUpdate: CaptureUpdateAction.NEVER }))
+                .catch(() => {}), 1800);
+            }
             setTimeout(() => {
               (window as any).isIncomingSync = false;
             }, 50);
@@ -329,7 +338,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       });
 
     channelRef.current = channel;
-    (window as any).broadcastDelta = (elements: any[]) => {
+    (window as any).broadcastDelta = (elements: any[], files: Record<string, any> = {}) => {
       if (!channelRef.current || !elements || elements.length === 0) return;
 
       const changedDeltas: any[] = [];
@@ -343,7 +352,10 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       }
 
       if (changedDeltas.length > 0) {
-        sendBroadcast('excalidraw_delta', { deltas: changedDeltas });
+        const changedFiles = Object.fromEntries(changedDeltas
+          .filter((element: any) => element.type === 'image' && element.fileId && files[element.fileId] && JSON.stringify(files[element.fileId]).length < 400000)
+          .map((element: any) => [element.fileId, files[element.fileId]]));
+        sendBroadcast('excalidraw_delta', { deltas: changedDeltas, files: changedFiles });
       }
     };
 
@@ -380,6 +392,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       const pending = (window as any).pendingDeltas;
       if (pending && pending.length > 0 && (window as any).excalidrawAPI) {
         (window as any).pendingDeltas = [];
+        const pendingFiles = (window as any).pendingDeltaFiles || {};
+        (window as any).pendingDeltaFiles = {};
         (window as any).isIncomingSync = true;
         const api = (window as any).excalidrawAPI;
         const merged = reconcileElements(
@@ -393,7 +407,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         try {
           localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
         } catch {}
-        api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
+        api.updateScene({ elements: merged, files: { ...(api.getFiles?.() || {}), ...pendingFiles }, captureUpdate: CaptureUpdateAction.NEVER });
         setTimeout(() => {
           (window as any).isIncomingSync = false;
         }, 50);
