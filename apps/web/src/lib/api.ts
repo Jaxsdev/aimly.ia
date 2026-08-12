@@ -92,7 +92,9 @@ export const api = {
   excalidraw: {
     getScene: (meetingId: string) => apiRequest<{ elements: any[]; files: Record<string, any>; updated_at: string | null }>('GET', `/api/meetings/${meetingId}/excalidraw-scene`),
     saveScene: (meetingId: string, elements: readonly any[], files: Record<string, any>) =>
-      apiRequest('PUT', `/api/meetings/${meetingId}/excalidraw-scene`, { elements, files })
+      apiRequest('PUT', `/api/meetings/${meetingId}/excalidraw-scene`, { elements, files }),
+    createUploadUrl: (meetingId: string, fileId: string) =>
+      apiRequest<{ path: string; token: string }>('POST', `/api/meetings/${meetingId}/excalidraw-files/upload-url`, { fileId })
   },
 
   votes: {

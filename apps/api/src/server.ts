@@ -44,6 +44,9 @@ const saveExcalidrawSceneSchema = z.object({
   elements: z.array(z.unknown()).max(5000),
   files: z.record(z.string(), z.unknown()).default({})
 });
+const createExcalidrawUploadUrlSchema = z.object({
+  fileId: z.string().min(1).max(200).regex(/^[A-Za-z0-9_-]+$/)
+});
 
 const createVoteSchema = z.object({
   question: z.string().min(1).max(500),
@@ -560,6 +563,21 @@ server.put(
       .single();
     if (error) throw new Error(error.message);
     return reply.send({ success: true, data });
+  }
+);
+
+// Generates a short-lived Storage upload URL. The browser uploads directly to
+// Supabase Storage, so this service never receives image bytes.
+server.post(
+  '/api/meetings/:meetingId/excalidraw-files/upload-url',
+  { preHandler: requireAuth, schema: { body: createExcalidrawUploadUrlSchema } },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const { fileId } = request.body as z.infer<typeof createExcalidrawUploadUrlSchema>;
+    const path = `${meetingId}/${fileId}`;
+    const { data, error } = await supabase.storage.from('whiteboard-files').createSignedUploadUrl(path, { upsert: true });
+    if (error || !data) throw new Error(error?.message || 'No se pudo autorizar la carga de imagen');
+    return reply.send({ success: true, data: { path, token: data.token } });
   }
 );
 
