@@ -114,8 +114,8 @@ export function Whiteboard() {
         throw new Error('La imagen supera el límite de 8 MB. Comprímela o usa una captura más pequeña.');
       }
       const path = `${meeting.id}/${id}`;
-      const { error } = await supabase.storage.from(WHITEBOARD_BUCKET).upload(path, blob, { contentType: file.mimeType || blob.type, upsert: false });
-      if (error && !/already exists/i.test(error.message)) throw error;
+      const { error } = await supabase.storage.from(WHITEBOARD_BUCKET).upload(path, blob, { contentType: file.mimeType || blob.type, upsert: true });
+      if (error) throw error;
       uploadedFilePathsRef.current[id] = path;
       const { dataURL: _dataURL, ...metadata } = file;
       return [id, { ...metadata, storagePath: path }];
