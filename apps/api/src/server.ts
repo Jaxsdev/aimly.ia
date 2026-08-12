@@ -38,6 +38,14 @@ const updateMeetingFocusSchema = z.object({
   expectedOutcome: z.string().min(1).max(2000)
 });
 
+const updateMeetingSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  objective: z.string().min(1).max(2000).optional(),
+  expectedOutcome: z.string().min(1).max(2000).optional(),
+  durationMinutes: z.number().int().min(5).max(480).optional()
+});
+type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
+
 const participantReadySchema = z.object({ isReady: z.boolean() });
 
 const saveExcalidrawSceneSchema = z.object({
@@ -124,9 +132,17 @@ async function requireAuth(request: any, _reply: any) {
 
 // Every meeting-scoped endpoint requires membership. Joining is intentionally
 // excluded so an authenticated user can enter a meeting through its invite URL.
+// PATCH and DELETE on the root meeting resource are also excluded: they use
+// requireAuth + host_id verification inside the handler itself.
 server.addHook('preHandler', async (request: any, reply) => {
   const match = request.url.match(/^\/api\/meetings\/([^/?]+)/);
-  if (!match || request.url.startsWith(`/api/meetings/${match[1]}/join`)) return;
+  if (!match) return;
+
+  const subPath = request.url.slice(`/api/meetings/${match[1]}`.length);
+  const isJoin = subPath.startsWith('/join');
+  // Root-level resource mutations handled with their own auth + host check
+  const isRootMutation = subPath === '' && (request.method === 'PATCH' || request.method === 'DELETE');
+  if (isJoin || isRootMutation) return;
 
   await requireAuth(request, reply);
   if (reply.sent) return;
@@ -220,6 +236,91 @@ server.get(
       return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Meeting not found' } });
     }
     return reply.send({ success: true, data });
+  }
+);
+
+// PATCH /api/meetings/:meetingId — Editar reunión (solo anfitrión, solo en estado draft)
+server.patch(
+  '/api/meetings/:meetingId',
+  { preHandler: requireAuth, schema: { body: updateMeetingSchema } },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const input = request.body as UpdateMeetingInput;
+    const userId = request.user.id;
+
+    // Verificar existencia y propiedad
+    const { data: meeting, error: fetchError } = await supabase
+      .from('meetings')
+      .select('id, host_id, status')
+      .eq('id', meetingId)
+      .single();
+
+    if (fetchError || !meeting) {
+      return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Reunión no encontrada' } });
+    }
+    if (meeting.host_id !== userId) {
+      return reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'Solo el anfitrión puede editar la reunión' } });
+    }
+    if (meeting.status !== 'draft') {
+      return reply.status(409).send({ success: false, error: { code: 'INVALID_STATE', message: 'Solo se pueden editar reuniones en espera' } });
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (input.title !== undefined) updates.title = input.title;
+    if (input.objective !== undefined) updates.objective = input.objective;
+    if (input.expectedOutcome !== undefined) updates.expected_outcome = input.expectedOutcome;
+    if (input.durationMinutes !== undefined) updates.duration_minutes = input.durationMinutes;
+
+    const { data: updated, error: updateError } = await supabase
+      .from('meetings')
+      .update(updates)
+      .eq('id', meetingId)
+      .select()
+      .single();
+
+    if (updateError) throw new Error(updateError.message);
+    return reply.send({ success: true, data: updated });
+  }
+);
+
+// DELETE /api/meetings/:meetingId — Eliminar reunión (solo anfitrión)
+server.delete(
+  '/api/meetings/:meetingId',
+  { preHandler: requireAuth },
+  async (request: any, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const userId = request.user.id;
+
+    // Verificar existencia y propiedad
+    const { data: meeting, error: fetchError } = await supabase
+      .from('meetings')
+      .select('id, host_id, title')
+      .eq('id', meetingId)
+      .single();
+
+    if (fetchError || !meeting) {
+      return reply.status(404).send({ success: false, error: { code: 'MEETING_NOT_FOUND', message: 'Reunión no encontrada' } });
+    }
+    if (meeting.host_id !== userId) {
+      return reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'Solo el anfitrión puede eliminar la reunión' } });
+    }
+
+    // El cascade en FK limpia participantes, mensajes, tarjetas, etc.
+    const { error: deleteError } = await supabase
+      .from('meetings')
+      .delete()
+      .eq('id', meetingId);
+
+    if (deleteError) throw new Error(deleteError.message);
+
+    // Notificar a participantes activos (best-effort)
+    try {
+      await publishMeetingEvent(meetingId, 'meeting_deleted' as any, { meetingId, title: meeting.title });
+    } catch (err) {
+      request.log.warn({ err }, 'No se pudo publicar el evento meeting_deleted');
+    }
+
+    return reply.status(200).send({ success: true, data: { deleted: true } });
   }
 );
 
