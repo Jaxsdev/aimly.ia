@@ -67,7 +67,9 @@ type CastVoteInput = z.infer<typeof castVoteSchema>;
 // ============================================================
 
 const server = Fastify({
-  bodyLimit: 12 * 1024 * 1024,
+  // Scenes contain element metadata only. Binary image data belongs in Storage,
+  // never in the API process where it can exhaust a small Render instance.
+  bodyLimit: 1024 * 1024,
   logger: {
     transport: {
       target: 'pino-pretty',

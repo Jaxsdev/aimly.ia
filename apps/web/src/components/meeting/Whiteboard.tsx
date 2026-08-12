@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useMeeting } from '../../contexts/MeetingContext';
 import { api } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 
 type BoardViewMode = 'excalidraw' | 'stickyNotes';
 
@@ -17,6 +18,14 @@ const COLOR_PALETTE = [
   { id: 'sage', name: 'Verde Sage', bg: 'bg-[#F2F4EF]', border: 'border-[#A8B49A]' },
   { id: 'butter', name: 'Mantequilla', bg: 'bg-[#FDFBF2]', border: 'border-[#E9CF87]' },
 ];
+const WHITEBOARD_BUCKET = 'whiteboard-files';
+
+const toDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
 
 export function Whiteboard() {
   const { meeting, cards, createCard, updateCard, collaborators, stickyCursors } = useMeeting();
@@ -25,20 +34,39 @@ export function Whiteboard() {
   const [viewMode, setViewMode] = useState<BoardViewMode>('excalidraw');
   const [initialElements, setInitialElements] = useState<any[] | null>(null);
   const [initialFiles, setInitialFiles] = useState<Record<string, any>>({});
+  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
   const latestElementsRef = useRef<readonly any[]>([]);
   const latestFilesRef = useRef<Record<string, any>>({});
+  const uploadedFilePathsRef = useRef<Record<string, string>>({});
+  const hasRenderedInitialSceneRef = useRef(false);
+  const isApplyingInitialFilesRef = useRef(false);
   const persistTimerRef = useRef<number | undefined>(undefined);
   const [boardProposal, setBoardProposal] = useState<{ title: string; base: any[]; elements: any[]; files?: any } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     if (!meeting?.id) return;
+    hasRenderedInitialSceneRef.current = false;
 
     api.excalidraw.getScene(meeting.id)
-      .then((scene) => {
+      .then(async (scene) => {
         if (!cancelled) {
-          setInitialElements(Array.isArray(scene.elements) ? scene.elements : []);
-          setInitialFiles(scene.files || {});
+          const elements = Array.isArray(scene.elements) ? scene.elements : [];
+          const storedFiles = scene.files || {};
+          const hydratedEntries = await Promise.all(Object.entries(storedFiles).map(async ([id, file]: [string, any]) => {
+            if (!file.storagePath) return null;
+            const { data } = supabase.storage.from(WHITEBOARD_BUCKET).getPublicUrl(file.storagePath);
+            const response = await fetch(data.publicUrl);
+            if (!response.ok) throw new Error(`No se pudo cargar la imagen ${id}`);
+            const dataURL = await toDataUrl(await response.blob());
+            uploadedFilePathsRef.current[id] = file.storagePath;
+            return [id, { ...file, dataURL }];
+          }));
+          const files = Object.fromEntries(hydratedEntries.filter((entry): entry is [string, any] => entry !== null));
+          latestElementsRef.current = elements;
+          latestFilesRef.current = files;
+          setInitialElements(elements);
+          setInitialFiles(files);
         }
       })
       .catch((error) => {
@@ -58,11 +86,44 @@ export function Whiteboard() {
     if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
   }, []);
 
+  // Excalidraw does not load binary files from `initialData`. They must be
+  // registered explicitly so image elements can resolve their fileId after a
+  // refresh or when a participant enters later.
+  useEffect(() => {
+    if (excalidrawApi && Object.keys(initialFiles).length > 0) {
+      isApplyingInitialFilesRef.current = true;
+      excalidrawApi.addFiles(initialFiles);
+      window.setTimeout(() => { isApplyingInitialFilesRef.current = false; }, 0);
+    }
+  }, [excalidrawApi, initialFiles]);
+
+  const serializeFilesForStorage = async (files: Record<string, any>) => {
+    const serialized = await Promise.all(Object.entries(files).map(async ([id, file]: [string, any]) => {
+      const existingPath = file.storagePath || uploadedFilePathsRef.current[id];
+      if (existingPath) {
+        uploadedFilePathsRef.current[id] = existingPath;
+        const { dataURL: _dataURL, ...metadata } = file;
+        return [id, { ...metadata, storagePath: existingPath }];
+      }
+      if (!file.dataURL || !meeting?.id) return null;
+      const response = await fetch(file.dataURL);
+      const blob = await response.blob();
+      const path = `${meeting.id}/${id}`;
+      const { error } = await supabase.storage.from(WHITEBOARD_BUCKET).upload(path, blob, { contentType: file.mimeType || blob.type, upsert: false });
+      if (error && !/already exists/i.test(error.message)) throw error;
+      uploadedFilePathsRef.current[id] = path;
+      const { dataURL: _dataURL, ...metadata } = file;
+      return [id, { ...metadata, storagePath: path }];
+    }));
+    return Object.fromEntries(serialized.filter((entry): entry is [string, any] => entry !== null));
+  };
+
   const scheduleScenePersistence = () => {
     if (!meeting?.id || (window as any).isIncomingSync) return;
     if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = window.setTimeout(() => {
-      api.excalidraw.saveScene(meeting.id, latestElementsRef.current, latestFilesRef.current)
+    persistTimerRef.current = window.setTimeout(async () => {
+      const files = await serializeFilesForStorage(latestFilesRef.current);
+      api.excalidraw.saveScene(meeting.id, latestElementsRef.current, files)
         .catch((error) => console.warn('[Whiteboard] Could not persist shared scene.', error));
     }, 1200);
   };
@@ -257,10 +318,18 @@ export function Whiteboard() {
             }}
             excalidrawAPI={(api) => {
               (window as any).excalidrawAPI = api;
+              setExcalidrawApi(api);
             }}
             onChange={(elements, _appState, files) => {
               latestElementsRef.current = elements;
               latestFilesRef.current = files || {};
+              // Excalidraw emits onChange while it restores a scene. That is
+              // not an edit: rebroadcasting it lets a refreshing client
+              // overwrite newer work from another participant.
+              if (!hasRenderedInitialSceneRef.current || isApplyingInitialFilesRef.current) {
+                hasRenderedInitialSceneRef.current = true;
+                return;
+              }
               if (meeting?.id) {
                 // Save to local storage asynchronously
                 try {
