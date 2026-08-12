@@ -1,72 +1,62 @@
-# Tarea de Escobar — calidad, fallos y pruebas de integración
+# Escobar — navegación, cuenta y pantallas que hoy son maqueta
 
-## Objetivo
+## Misión
 
-Ser responsable de calidad transversal: detectar errores antes de que lleguen a `main`, documentarlos de forma reproducible y corregir únicamente errores aislados que no invadan el trabajo de Didi o Josué.
+Eliminar promesas falsas de la interfaz principal. La barra lateral contiene enlaces sin ruta, el perfil usa un usuario de demostración y el buscador/avisos no realizan una acción. Tu tarea es volver útil la navegación y la cuenta, sin modificar reuniones, resultados ni pizarra.
 
-## Alcance permitido
+## Entregables obligatorios
 
-- Revisar el flujo completo de producto y crear una guía de pruebas bajo `docs/` si es necesaria.
-- Corregir errores pequeños y aislados de interfaz, validación o mensajes de error en archivos que no estén siendo modificados por los demás.
-- Revisar especialmente:
-  - inicio de sesión y creación de cuenta;
-  - creación e ingreso a reuniones;
-  - llamada de audio/video;
-  - chat, notas adhesivas, panel AimLy;
-  - reproductor de música de prueba;
-  - mensajes de consola y fallos de red.
-- Para cada fallo importante, abrir un issue o anotarlo con: pasos, resultado esperado, resultado actual, captura y severidad.
+### 1. Navegación y perfil reales
 
-## Fuera de alcance
+- Sustituir `demoUser` en `apps/web/src/components/layout/AppLayout.tsx` por el usuario de `AuthContext`.
+- Mostrar nombre, correo y avatar disponibles; tener alternativa legible cuando no exista avatar o nombre.
+- Al pulsar el perfil, abrir un menú con `Ajustes` y `Cerrar sesión` funcional. Cerrar sesión debe limpiar la sesión y redirigir a `/`.
+- Eliminar o desactivar claramente el botón `Actualizar plan` hasta que haya facturación. No debe aparentar que funciona.
 
-- No rediseñar funcionalidades ni rehacer componentes grandes.
-- No editar `Whiteboard.tsx`, `MeetingLobbyPage.tsx`, `WaitingLobby.tsx` ni `MeetingRoomPage.tsx` sin coordinación: son las zonas asignadas a Didi/Josué.
-- No modificar secretos, `.env`, configuraciones de Vercel/Supabase ni ejecutar migraciones de producción.
+### 2. Ajustes funcionales
 
-## Matriz mínima de pruebas
+- Crear la ruta `/settings` y `SettingsPage.tsx`.
+- Permitir editar nombre visible y avatar por URL (si el perfil actual lo soporta); validar URL y mostrar estado guardando/error/éxito.
+- Incluir una sección de cuenta con correo de solo lectura y cierre de sesión.
+- No guardes secretos, tokens ni claves en la interfaz.
 
-Realiza estas pruebas con cuentas reales, preferiblemente Chrome y otro navegador:
+### 3. Búsqueda global honesta y útil
 
-| Área | Prueba que debe pasar |
-| --- | --- |
-| Cuenta | Registro e inicio de sesión; ningún usuario anónimo se crea. |
-| Lobby | Anfitrión e invitado ven el mismo estado `Listo`; solo el anfitrión inicia. |
-| Llamada | Dos participantes pueden entrar, responder y salir sin que la página falle. |
-| Chat | Mensajes nuevos aparecen para ambos sin recargar. |
-| Pizarra | Texto y una imagen se ven desde ambas cuentas; reporta a Josué si falla. |
-| AimLy | Una propuesta y un flujo Mermaid se añaden sin error en consola. |
-| Música | El anfitrión controla reproducción; cada persona pulsa `Escuchar música` por la restricción del navegador. |
-| Recuperación | Recargar no expulsa al usuario ni pierde los datos persistidos de la reunión. |
+- Conectar el buscador del encabezado a la ruta `/meetings` con el parámetro `?q=`. Didi implementará el filtrado de reuniones; aquí solo captura el texto, usa Enter y muestra un botón para limpiar.
+- Mientras Didi no integre su PR, la búsqueda debe seguir navegando sin romper la app.
+- Botón de campana: si no existe sistema de notificaciones, reemplazarlo por un icono sin punto naranja y `title="Sin notificaciones todavía"`. No dejes una alerta falsa.
 
-## Cómo reportar un error
+### 4. Enlaces que aún no existen
 
-Usa este formato en el issue o PR:
+- `Plantillas` e `Integraciones` deben ser rutas reales de estado `Próximamente`, explicando que aún no están disponibles. No inventes datos ni botones que aparenten guardar.
+- `Tareas` y `Decisiones` deben enlazar a `/tasks` y `/decisions`; Josué implementará su contenido. Si esas rutas aún no existen en su rama, crea solo una navegación segura y coordina la integración, no una página duplicada.
 
-```md
-### Título breve
-Severidad: bloqueante / alta / media / baja
-Entorno: navegador, dispositivo y URL (sin compartir tokens)
-Pasos para reproducir:
-1. ...
-Resultado esperado: ...
-Resultado actual: ...
-Evidencia: captura, video o error de consola
-```
+## Archivos que sí puedes tocar
 
-Nunca pegues contraseñas, JWT, claves de Supabase ni archivos `.env` en GitHub, capturas o chat.
+- `apps/web/src/components/layout/AppLayout.tsx`
+- nuevos: `apps/web/src/pages/SettingsPage.tsx`, `ComingSoonPage.tsx`
+- `apps/web/src/App.tsx` solo para settings/plantillas/integraciones
+- `apps/web/src/contexts/AuthContext.tsx` y `apps/web/src/lib/api.ts` solo si son imprescindibles para editar perfil.
 
-## GitHub y calidad
+## No tocar
 
-1. Empieza desde `main` actualizado y crea `chore/qa-integration-escobar`.
-2. Separa los hallazgos de los arreglos: un issue por fallo y un PR por arreglo relacionado.
-3. Antes de proponer un arreglo, revisa `git status` y `git diff`; no arrastres cambios ajenos.
-4. Ejecuta siempre:
+- `HomePage.tsx`, `MeetingsPage.tsx`, `server.ts` (Didi).
+- `MeetingResultPage.tsx`, tareas, decisiones (Josué).
+- lobby, sala, pizarra, llamadas y `MeetingContext.tsx`.
 
-   ```bash
-   npm run lint
-   npm run typecheck
-   npm run build:all
-   ```
+## Criterios de aceptación y pruebas
 
-5. No apruebes ni mezcles tu propio PR. Pide revisión de al menos una persona.
-6. Un PR solo puede ir a `main` si los tres comandos pasan y las pruebas manuales afectadas están anotadas en la descripción.
+1. Iniciar con dos cuentas y comprobar que cada una ve su propio nombre/correo, no `demoUser`.
+2. Guardar un nombre/avatar válido, recargar e iniciar sesión de nuevo: los datos continúan.
+3. URL de avatar inválida muestra error y no cambia el perfil.
+4. Cerrar sesión lleva a `/`; al intentar `/home` se exige iniciar sesión.
+5. Buscar, presionar Enter y limpiar; la URL y navegación son correctas.
+6. Plantillas e Integraciones muestran aviso honesto; Tareas y Decisiones navegan a las rutas de Josué al integrar ambos PR.
+7. Revisar consola y móvil: no hay enlaces rotos ni errores rojos.
+
+## GitHub
+
+- Rama: `feat/account-navigation-escobar`.
+- Coordina con Didi/Josué antes de modificar `App.tsx`; cada uno agrega rutas distintas y el conflicto debe resolverse en un único commit de integración.
+- Ejecuta `npm run lint`, `npm run typecheck` y `npm run build:all` antes del PR.
+- Describe funciones terminadas, capturas y resultados de las siete pruebas. Pide revisión y no mezcles tu propio PR.

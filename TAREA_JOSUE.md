@@ -1,57 +1,61 @@
-# Tarea de Josué — colaboración de pizarra e imágenes
+# Josué — resultados, tareas y decisiones que sí persisten
 
-## Objetivo
+## Misión
 
-Validar y mejorar la colaboración visual de Excalidraw: texto, formas, imágenes y recuperación al recargar. El resultado debe ser que todos los participantes vean el mismo tablero sin borrar el trabajo ajeno.
+Hacer funcional la parte posterior a una reunión. El menú lateral promete `Tareas` y `Decisiones`, pero no existen rutas ni pantallas globales. Tu entrega debe convertir las tareas y decisiones creadas en una reunión en resultados consultables y accionables.
 
-## Alcance permitido
+## Entregables obligatorios
 
-- Trabajar únicamente en la pizarra y su soporte de archivos:
-  - `apps/web/src/components/meeting/Whiteboard.tsx`
-  - pruebas o utilidades nuevas exclusivamente bajo `apps/web/src/components/meeting/`
-  - documentación de pruebas de pizarra, si hace falta.
-- Priorizar problemas reproducibles: imágenes que no cargan, elementos duplicados, parpadeos, pérdida tras recargar o conflicto al dibujar a la vez.
-- Comprobar la migración de imágenes existente y documentar claramente si falta aplicarla en Supabase:
-  - `apps/api/src/db/migrations/20260811_excalidraw_image_files.sql`
+### 1. Centro de tareas
 
-## Fuera de alcance
+- Crear `/tasks` y `apps/web/src/pages/TasksPage.tsx`.
+- Mostrar las tareas de todas las reuniones donde el usuario participa, con título de reunión, responsable, estado, fecha si existe y texto.
+- Filtros: pendientes, completadas y por reunión. Búsqueda por texto.
+- Permitir que quien creó/asignó la tarea o su responsable marque `pendiente` / `completada`; cada cambio debe persistir y verse tras recargar.
+- No muestres datos de reuniones donde el usuario no participa.
 
-- No cambies `MeetingContext.tsx`: es la capa compartida de tiempo real y puede estar siendo modificada por otra persona.
-- No modificar rutas API, esquema SQL, autenticación, llamadas ni panel de IA.
-- No añadir librerías ni almacenamiento externo sin aprobarlo primero.
+### 2. Centro de decisiones
 
-## Reglas técnicas
+- Crear `/decisions` y `apps/web/src/pages/DecisionsPage.tsx`.
+- Listar decisiones por reunión, su fecha, contexto/origen y estado si existe.
+- Añadir filtros por reunión y búsqueda.
+- Cada registro debe enlazar al resultado de su reunión: `/meeting/:id/result`.
 
-- No envíes imágenes pesadas directamente por el canal de tiempo real. El canal sirve para actualización rápida; la escena persistida es la recuperación confiable.
-- No borres ni sobrescribas elementos remotos al recibir cambios. Conserva la reconciliación de Excalidraw.
-- Usa archivos de imagen de tamaño razonable durante las pruebas (PNG/JPG/WebP) y documenta límites observados.
-- Si detectas que falta una migración, no la ejecutes contra producción: informa primero y deja la instrucción SQL clara.
+### 3. Resultados de reunión completos
 
-## Pruebas manuales obligatorias
+- Revisar `MeetingResultPage.tsx`: debe obtener datos reales, no datos de demostración.
+- Al finalizar una reunión, mostrar resumen, decisiones y tareas persistidas. Si no hay datos, usar mensajes vacíos, nunca contenido falso.
+- Añadir acciones `Ir a tareas` y `Ir a decisiones` que respeten los filtros de la reunión actual.
 
-Con dos cuentas y dos navegadores en la misma reunión:
+### 4. API mínima y segura
 
-- Crear texto, rectángulos, flechas y notas: ambas pantallas los ven.
-- Subir una imagen pequeña y confirmar que aparece en el otro navegador sin recargar.
-- Subir una imagen más grande; confirmar que se recupera después del guardado automático.
-- Recargar el navegador que no subió la imagen: la escena e imagen deben recuperarse.
-- Entrar a la reunión después de que la imagen exista: debe verla.
-- Dos personas dibujan al mismo tiempo: los trazos no desaparecen ni reemplazan el contenido del otro.
-- Borrar una imagen y recargar: no debe reaparecer.
-- Verificar consola: no debe haber errores rojos relacionados con Excalidraw ni archivos faltantes.
+Puedes modificar solo estas rutas de datos:
 
-## GitHub y calidad
+- `apps/api/src/server.ts`
+- `apps/web/src/lib/api.ts`
+- archivos nuevos bajo `apps/web/src/pages/` y `apps/web/src/components/results/`
+- `apps/web/src/App.tsx` únicamente para registrar `/tasks` y `/decisions`.
 
-1. Sincroniza `main` y crea la rama `fix/whiteboard-collaboration-josue`.
-2. No edites los mismos archivos que Didi o Escobar. Si necesitas `MeetingContext.tsx`, abre un issue o pregunta antes.
-3. Commits atómicos: `fix: preserve image files in whiteboard` es mejor que un commit genérico.
-4. No incluyas `.env`, `node_modules`, archivos de prueba sueltos ni cambios de compilación en el PR.
-5. Ejecuta antes de subir:
+Agrega o completa endpoints para listar tareas y decisiones del usuario autenticado. Todas las consultas deben verificar `meeting_participants`; no confíes en un `meetingId` enviado por el cliente para autorizar acceso.
 
-   ```bash
-   npm run lint
-   npm run typecheck
-   npm run build:all
-   ```
+## No tocar
 
-6. En el PR incluye una tabla con cada prueba manual, resultado y navegador usado. Adjunta un video corto o capturas de la prueba con dos participantes.
+- Inicio, rutas `/meetings`, edición/eliminación de reuniones (Didi).
+- Pizarra, archivos de imagen y `MeetingContext.tsx` (no tocar).
+- Sidebar y perfil (`AppLayout.tsx`, asignado a Escobar), salvo registrar las nuevas rutas en `App.tsx`.
+
+## Criterios de aceptación y pruebas
+
+1. En una reunión, crear o aceptar tareas/decisiones y finalizarla.
+2. Recargar resultados: muestra datos reales de esa reunión.
+3. `/tasks` solo muestra tareas de reuniones propias; filtros, búsqueda y cambio de estado persisten.
+4. `/decisions` solo muestra decisiones propias; filtros y enlace al resultado funcionan.
+5. Con segunda cuenta participante, confirmar qué acciones puede cambiar según las reglas definidas; con una tercera cuenta ajena, confirmar que no ve ni obtiene datos por API.
+6. Estados vacío, carga y fallo de red no rompen la página.
+
+## GitHub
+
+- Rama: `feat/meeting-results-josue`.
+- Mantén commits pequeños y descriptivos. Un PR no debe incluir arreglos de pizarra ni cambios de UI no relacionados.
+- Ejecuta `npm run lint`, `npm run typecheck` y `npm run build:all` antes de abrirlo.
+- Documenta en el PR endpoints, reglas de autorización y evidencia de las seis pruebas.
