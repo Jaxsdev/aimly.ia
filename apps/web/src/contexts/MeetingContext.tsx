@@ -272,13 +272,14 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
               localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
             } catch {}
 
-            excalidrawApi.updateScene({ elements: merged, files: { ...(excalidrawApi.getFiles?.() || {}), ...(payload.files || {}) }, captureUpdate: CaptureUpdateAction.NEVER });
+            excalidrawApi.addFiles?.(payload.files || {});
+            excalidrawApi.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
             const hasImageWithoutFile = payload.deltas.some((element: any) => element.type === 'image' && element.fileId && !payload.files?.[element.fileId]);
             if (hasImageWithoutFile) {
               // Large images are persisted through the API instead of exceeding the
               // Realtime broadcast limit. Retrieve the durable files once saved.
               window.setTimeout(() => api.excalidraw.getScene(meetingId)
-                .then((scene: { files?: Record<string, any> }) => (window as any).excalidrawAPI?.updateScene({ files: { ...((window as any).excalidrawAPI.getFiles?.() || {}), ...(scene.files || {}) }, captureUpdate: CaptureUpdateAction.NEVER }))
+                .then((scene: { files?: Record<string, any> }) => (window as any).excalidrawAPI?.addFiles?.(scene.files || {}))
                 .catch(() => {}), 1800);
             }
             setTimeout(() => {
@@ -407,7 +408,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         try {
           localStorage.setItem(`excalidraw_scene_${meetingId}`, JSON.stringify(merged));
         } catch {}
-        api.updateScene({ elements: merged, files: { ...(api.getFiles?.() || {}), ...pendingFiles }, captureUpdate: CaptureUpdateAction.NEVER });
+        api.addFiles?.(pendingFiles);
+        api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
         setTimeout(() => {
           (window as any).isIncomingSync = false;
         }, 50);

@@ -123,7 +123,8 @@ export function Whiteboard() {
     const excalidraw = (window as any).excalidrawAPI;
     const elements = [...boardProposal.base, ...boardProposal.elements];
     latestElementsRef.current = elements;
-    excalidraw?.updateScene({ elements, files: boardProposal.files });
+    excalidraw?.addFiles?.(boardProposal.files || {});
+    excalidraw?.updateScene({ elements });
     (window as any).broadcastDelta?.(elements, boardProposal.files || {});
     scheduleScenePersistence();
     setBoardProposal(null);
