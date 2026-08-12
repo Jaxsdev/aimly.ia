@@ -19,7 +19,7 @@ export interface Participant {
 }
 
 export interface ReadinessParticipant { user_id: string; role: string; is_ready: boolean; ready_at?: string | null; profiles?: { id: string; name: string } | null; }
-export interface SharedMusicState { videoId: string; playing: boolean; updatedAt: number; }
+export interface SharedMusicState { videoId: string; playing: boolean; position: number; startedAt: number | null; updatedAt: number; }
 
 interface MeetingContextType {
   meeting: any | null;
