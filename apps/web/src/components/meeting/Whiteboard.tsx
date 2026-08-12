@@ -19,6 +19,7 @@ const COLOR_PALETTE = [
   { id: 'butter', name: 'Mantequilla', bg: 'bg-[#FDFBF2]', border: 'border-[#E9CF87]' },
 ];
 const WHITEBOARD_BUCKET = 'whiteboard-files';
+const MAX_WHITEBOARD_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const toDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -42,6 +43,7 @@ export function Whiteboard() {
   const isApplyingInitialFilesRef = useRef(false);
   const persistTimerRef = useRef<number | undefined>(undefined);
   const [boardProposal, setBoardProposal] = useState<{ title: string; base: any[]; elements: any[]; files?: any } | null>(null);
+  const [imageError, setImageError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +110,9 @@ export function Whiteboard() {
       if (!file.dataURL || !meeting?.id) return null;
       const response = await fetch(file.dataURL);
       const blob = await response.blob();
+      if (blob.size > MAX_WHITEBOARD_IMAGE_BYTES) {
+        throw new Error('La imagen supera el límite de 8 MB. Comprímela o usa una captura más pequeña.');
+      }
       const path = `${meeting.id}/${id}`;
       const { error } = await supabase.storage.from(WHITEBOARD_BUCKET).upload(path, blob, { contentType: file.mimeType || blob.type, upsert: false });
       if (error && !/already exists/i.test(error.message)) throw error;
@@ -122,9 +127,15 @@ export function Whiteboard() {
     if (!meeting?.id || (window as any).isIncomingSync) return;
     if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
     persistTimerRef.current = window.setTimeout(async () => {
-      const files = await serializeFilesForStorage(latestFilesRef.current);
-      api.excalidraw.saveScene(meeting.id, latestElementsRef.current, files)
-        .catch((error) => console.warn('[Whiteboard] Could not persist shared scene.', error));
+      try {
+        const files = await serializeFilesForStorage(latestFilesRef.current);
+        await api.excalidraw.saveScene(meeting.id, latestElementsRef.current, files);
+        (window as any).broadcastWhiteboardFilesReady?.(files);
+        setImageError('');
+      } catch (error: any) {
+        console.warn('[Whiteboard] Could not persist shared scene.', error);
+        setImageError(error?.message || 'No se pudo guardar la imagen compartida.');
+      }
     }, 1200);
   };
 
@@ -292,6 +303,7 @@ export function Whiteboard() {
         </button>
       </div>
       {meeting?.objective && <div className="absolute left-4 right-4 top-14 z-20 flex items-center gap-2 rounded-xl border border-aimly-border/80 bg-white/90 px-3 py-1.5 text-xs text-aimly-text/70 shadow-sm backdrop-blur pointer-events-none"><Target size={14} className="shrink-0 text-aimly-orange" /><span className="font-semibold text-aimly-text">Objetivo:</span><span className="truncate">{meeting.objective}</span></div>}
+      {imageError && <div className="absolute bottom-4 left-4 z-50 max-w-sm rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 shadow-lg">{imageError}</div>}
       {boardProposal && <div className="absolute right-4 top-20 z-40 w-72 rounded-2xl border border-aimly-orange/30 bg-white p-3 shadow-xl"><p className="text-xs font-bold text-aimly-text">Propuesta de AimLy: {boardProposal.title}</p><p className="mt-1 text-[11px] text-aimly-text/60">El texto punteado es una vista previa. ¿Deseas añadirlo a la pizarra?</p><div className="mt-3 flex gap-2"><button onClick={applyBoardProposal} className="flex-1 rounded-lg bg-aimly-orange py-2 text-xs font-bold text-white">Aplicar</button><button onClick={discardBoardProposal} className="flex-1 rounded-lg border border-aimly-border py-2 text-xs font-bold text-aimly-text">Descartar</button></div></div>}
 
       {/* ── MODE 1: EXCALIDRAW ENGINE ── */}

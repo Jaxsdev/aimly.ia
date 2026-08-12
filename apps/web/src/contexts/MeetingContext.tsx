@@ -6,6 +6,23 @@ import { supabase } from '../lib/supabase';
 import { subscribeToMeeting, sendPortalEvent } from '../realtime/portal.client';
 import { useAuth } from './AuthContext';
 
+const WHITEBOARD_BUCKET = 'whiteboard-files';
+const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+const hydrateWhiteboardFiles = async (storedFiles: Record<string, any>) => Object.fromEntries(await Promise.all(
+  Object.entries(storedFiles || {}).map(async ([id, file]: [string, any]) => {
+    if (!file?.storagePath) return [id, file];
+    const { data } = supabase.storage.from(WHITEBOARD_BUCKET).getPublicUrl(file.storagePath);
+    const response = await fetch(data.publicUrl);
+    if (!response.ok) throw new Error(`No se pudo descargar la imagen ${id}`);
+    return [id, { ...file, dataURL: await blobToDataUrl(await response.blob()) }];
+  })
+));
+
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
@@ -280,7 +297,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
               // Large images are persisted through the API instead of exceeding the
               // Realtime broadcast limit. Retrieve the durable files once saved.
               window.setTimeout(() => api.excalidraw.getScene(meetingId)
-                .then((scene: { files?: Record<string, any> }) => (window as any).excalidrawAPI?.addFiles?.(scene.files || {}))
+                .then((scene: { files?: Record<string, any> }) => hydrateWhiteboardFiles(scene.files || {}))
+                .then((files) => (window as any).excalidrawAPI?.addFiles?.(files))
                 .catch(() => {}), 1800);
             }
             setTimeout(() => {
@@ -288,6 +306,12 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
             }, 50);
           }
         }
+      })
+
+      .on('broadcast', { event: 'excalidraw_files_ready' }, ({ payload }) => {
+        hydrateWhiteboardFiles(payload?.files || {})
+          .then((files) => (window as any).excalidrawAPI?.addFiles?.(files))
+          .catch((error) => console.warn('[Whiteboard] No se pudieron recuperar archivos compartidos.', error));
       })
 
       // ── Realtime Mouse Cursors Sync ──────────────────────────
@@ -359,6 +383,10 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
           .map((element: any) => [element.fileId, files[element.fileId]]));
         sendBroadcast('excalidraw_delta', { deltas: changedDeltas, files: changedFiles });
       }
+    };
+
+    (window as any).broadcastWhiteboardFilesReady = (files: Record<string, any>) => {
+      sendBroadcast('excalidraw_files_ready', { files });
     };
 
     (window as any).broadcastPointer = (pointer: { x: number; y: number; tool?: 'pointer' | 'laser' }, button: 'up' | 'down') => {
@@ -465,6 +493,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         channelRef.current = null;
       }
       channelReadyRef.current = false;
+      delete (window as any).broadcastWhiteboardFilesReady;
       setIsConnected(false);
     };
   }, [meetingId, userId, user?.email, user?.user_metadata?.full_name, user?.user_metadata?.avatar_url, authLoading, fetchAll]);
