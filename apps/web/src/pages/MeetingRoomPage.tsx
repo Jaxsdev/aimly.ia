@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { CallAudio, VideoGrid } from '../components/meeting/VideoGrid';
 import { CallControls } from '../components/meeting/CallControls';
+import { SharedMusicPlayer } from '../components/meeting/SharedMusicPlayer';
 
 function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
   const { user, loading: authLoading, signInWithPassword, signUp } = useAuth();
@@ -169,6 +170,7 @@ function MeetingRoomContent({ onFinish }: { onFinish: () => void }) {
   return (
     <div className="h-screen w-full bg-aimly-bg flex flex-col overflow-hidden font-sans relative">
       <CallAudio peers={peers} />
+      <SharedMusicPlayer />
       <MeetingHeader onFinish={onFinish} />
 
       {/* Main Content Area: Either Board View or Full Video Grid View */}

@@ -19,6 +19,7 @@ export interface Participant {
 }
 
 export interface ReadinessParticipant { user_id: string; role: string; is_ready: boolean; ready_at?: string | null; profiles?: { id: string; name: string } | null; }
+export interface SharedMusicState { videoId: string; playing: boolean; updatedAt: number; }
 
 interface MeetingContextType {
   meeting: any | null;
@@ -30,6 +31,8 @@ interface MeetingContextType {
   stickyCursors: Map<string, { x: number; y: number; name: string }>;
   loading: boolean;
   isConnected: boolean;
+  sharedMusic: SharedMusicState | null;
+  setSharedMusic: (music: SharedMusicState | null) => void;
   sendMessage: (content: string) => Promise<void>;
   createCard: (card: any) => Promise<void>;
   updateCard: (cardId: string, updates: any) => Promise<void>;
@@ -54,6 +57,7 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
   const [stickyCursors, setStickyCursors] = useState<Map<string, { x: number; y: number; name: string }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
+  const [sharedMusic, setSharedMusicState] = useState<SharedMusicState | null>(null);
 
   const knownElementsRef = useRef<Map<string, number>>(new Map());
 
@@ -228,6 +232,9 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
         setReadiness(prev => prev.some(participant => participant.user_id === payload.user_id)
           ? prev.map(participant => participant.user_id === payload.user_id ? payload : participant)
           : [...prev, payload]);
+      })
+      .on('broadcast', { event: 'shared_music_changed' }, ({ payload }) => {
+        setSharedMusicState(payload || null);
       })
 
       .on('broadcast', { event: 'sticky_cursor' }, ({ payload }) => {
@@ -526,6 +533,11 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
     sendBroadcast('participant_readiness_changed', updated);
   };
 
+  const setSharedMusic = (music: SharedMusicState | null) => {
+    setSharedMusicState(music);
+    sendBroadcast('shared_music_changed', music);
+  };
+
   return (
     <MeetingContext.Provider value={{
       meeting,
@@ -537,6 +549,8 @@ export function MeetingProvider({ meetingId, children }: { meetingId: string; ch
       stickyCursors,
       loading,
       isConnected,
+      sharedMusic,
+      setSharedMusic,
       sendMessage,
       createCard,
       updateCard,
