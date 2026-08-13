@@ -69,7 +69,13 @@ export const api = {
 
     analyze: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/analyze`),
 
-    finish: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/finish`)
+    finish: (meetingId: string) => apiRequest('POST', `/api/meetings/${meetingId}/finish`),
+
+    update: (meetingId: string, body: { title?: string; objective?: string; expectedOutcome?: string; durationMinutes?: number }) =>
+      apiRequest('PATCH', `/api/meetings/${meetingId}`, body),
+
+    delete: (meetingId: string) =>
+      apiRequest('DELETE', `/api/meetings/${meetingId}`)
   },
 
   messages: {

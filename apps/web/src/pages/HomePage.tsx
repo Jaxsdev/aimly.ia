@@ -2,15 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { Card, Badge } from '../components/ui';
-import { Sparkles, Calendar as CalIcon, Clock, MoreHorizontal, Target, CheckCircle2, ChevronRight, Users } from 'lucide-react';
+import { Sparkles, Calendar as CalIcon, Clock, Target, CheckCircle2, ChevronRight, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { MeetingActionsMenu } from '../components/meetings/MeetingActionsMenu';
+import { EditMeetingModal } from '../components/meetings/EditMeetingModal';
+import { DeleteMeetingModal } from '../components/meetings/DeleteMeetingModal';
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingMeeting, setEditingMeeting] = useState<any | null>(null);
+  const [deletingMeeting, setDeletingMeeting] = useState<any | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -36,6 +41,7 @@ export default function HomePage() {
   const completedMeetings = meetings.filter(m => m.status === 'closed');
           
   return (
+    <>
     <AppLayout>
       <div className="max-w-6xl mx-auto flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         
@@ -78,7 +84,13 @@ export default function HomePage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button className="btn-primary py-2 px-4 rounded-lg text-sm flex-1">Revisar ahora</button>
+              <button
+                id="home-review-now-btn"
+                onClick={() => navigate('/meetings?status=active,draft')}
+                className="btn-primary py-2 px-4 rounded-lg text-sm flex-1"
+              >
+                Revisar ahora
+              </button>
               <button className="btn-secondary py-2 px-4 rounded-lg text-sm flex-1">Más tarde</button>
             </div>
           </Card>
@@ -111,7 +123,14 @@ export default function HomePage() {
                   <div className="absolute top-0 left-0 w-full h-1 bg-aimly-orange"></div>
                   <div className="flex justify-between items-start mb-4">
                     <Badge variant="warning" className="animate-pulse">{meeting.status === 'draft' ? 'En espera' : 'En curso'}</Badge>
-                    <button className="text-aimly-text/40 hover:text-aimly-text"><MoreHorizontal size={18} /></button>
+                    <MeetingActionsMenu
+                      meeting={meeting}
+                      isHost={meeting.host_id === user?.id}
+                      handlers={{
+                        onEdit: () => setEditingMeeting(meeting),
+                        onDelete: () => setDeletingMeeting(meeting)
+                      }}
+                    />
                   </div>
                   <h3 className="font-bold text-aimly-text text-lg mb-2 group-hover:text-aimly-orange transition-colors leading-tight">
                     {meeting.title}
@@ -136,7 +155,13 @@ export default function HomePage() {
                 <Card key={meeting.id} onClick={() => navigate(`/meeting/${meeting.id}/result`)} className="p-5 hover:border-aimly-text/20 transition-all cursor-pointer flex flex-col h-full bg-aimly-surface">
                   <div className="flex justify-between items-start mb-4">
                     <Badge variant="success">Finalizada</Badge>
-                    <button className="text-aimly-text/40 hover:text-aimly-text"><MoreHorizontal size={18} /></button>
+                    <MeetingActionsMenu
+                      meeting={meeting}
+                      isHost={meeting.host_id === user?.id}
+                      handlers={{
+                        onDelete: () => setDeletingMeeting(meeting)
+                      }}
+                    />
                   </div>
                   <h3 className="font-bold text-aimly-text text-lg mb-2 leading-tight">
                     {meeting.title}
@@ -216,5 +241,28 @@ export default function HomePage() {
         </Card>
       </div>
     </AppLayout>
+
+      {/* Modales */}
+      {editingMeeting && (
+        <EditMeetingModal
+          meeting={editingMeeting}
+          onSave={(updated: any) => {
+            setMeetings(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
+            setEditingMeeting(null);
+          }}
+          onClose={() => setEditingMeeting(null)}
+        />
+      )}
+      {deletingMeeting && (
+        <DeleteMeetingModal
+          meeting={deletingMeeting}
+          onDeleted={() => {
+            setMeetings(prev => prev.filter(m => m.id !== deletingMeeting.id));
+            setDeletingMeeting(null);
+          }}
+          onClose={() => setDeletingMeeting(null)}
+        />
+      )}
+    </>  
   );
 }

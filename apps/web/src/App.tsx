@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import HomePage from './pages/HomePage';
+import MeetingsPage from './pages/MeetingsPage';
 import CreateMeetingPage from './pages/CreateMeetingPage';
 import MeetingRoomPage from './pages/MeetingRoomPage';
 import MeetingLobbyPage from './pages/MeetingLobbyPage';
@@ -35,6 +36,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/home" element={<HomePage />} />
+            <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/new" element={<CreateMeetingPage />} />
             <Route path="/meeting/:meetingId/lobby" element={<MeetingLobbyPage />} />
             <Route path="/meeting/:meetingId" element={<MeetingRoomPage />} />
