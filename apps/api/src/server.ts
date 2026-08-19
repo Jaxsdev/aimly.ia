@@ -1110,6 +1110,110 @@ server.post(
   }
 );
 
+// GET /api/tasks — List all tasks across all meetings where user participates
+server.get('/api/tasks', { preHandler: requireAuth }, async (request: any, reply) => {
+  const userId = request.user.id;
+
+  // Get all meeting IDs user participates in
+  const { data: userMeetings, error: meetingErr } = await supabase
+    .from('meeting_participants')
+    .select('meeting_id')
+    .eq('user_id', userId);
+
+  if (meetingErr) throw new Error(meetingErr.message);
+
+  const meetingIds = (userMeetings || []).map(m => m.meeting_id);
+  if (meetingIds.length === 0) {
+    return reply.send({ success: true, data: [] });
+  }
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*, meetings!inner(id, title), profiles:assignee_id(id, name, avatar_url)')
+    .in('meeting_id', meetingIds)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return reply.send({ success: true, data: data || [] });
+});
+
+// PATCH /api/tasks/:taskId/status — Update task status
+const updateTaskStatusSchema = z.object({
+  status: z.enum(['todo', 'in_progress', 'done'])
+});
+
+server.patch(
+  '/api/tasks/:taskId/status',
+  { preHandler: requireAuth, schema: { body: updateTaskStatusSchema } },
+  async (request: any, reply) => {
+    const { taskId } = request.params as { taskId: string };
+    const { status } = request.body as z.infer<typeof updateTaskStatusSchema>;
+    const userId = request.user.id;
+
+    // Fetch task to verify access
+    const { data: task, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('id, meeting_id, assignee_id')
+      .eq('id', taskId)
+      .single();
+
+    if (fetchErr || !task) {
+      return reply.status(404).send({ success: false, error: { code: 'TASK_NOT_FOUND', message: 'Tarea no encontrada' } });
+    }
+
+    // Verify user is a participant of the meeting
+    const { data: participant } = await supabase
+      .from('meeting_participants')
+      .select('role')
+      .eq('meeting_id', task.meeting_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!participant) {
+      return reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'No perteneces a la reunión de esta tarea' } });
+    }
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', taskId)
+      .select('*, meetings(id, title), profiles:assignee_id(id, name, avatar_url)')
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    await publishMeetingEvent(task.meeting_id, 'task_updated', data);
+    return reply.send({ success: true, data });
+  }
+);
+
+// GET /api/decisions — List all decisions across all meetings where user participates
+server.get('/api/decisions', { preHandler: requireAuth }, async (request: any, reply) => {
+  const userId = request.user.id;
+
+  const { data: userMeetings, error: meetingErr } = await supabase
+    .from('meeting_participants')
+    .select('meeting_id')
+    .eq('user_id', userId);
+
+  if (meetingErr) throw new Error(meetingErr.message);
+
+  const meetingIds = (userMeetings || []).map(m => m.meeting_id);
+  if (meetingIds.length === 0) {
+    return reply.send({ success: true, data: [] });
+  }
+
+  const { data, error } = await supabase
+    .from('decisions')
+    .select('*, meetings!inner(id, title, created_at), profiles:confirmed_by(id, name, avatar_url)')
+    .in('meeting_id', meetingIds)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return reply.send({ success: true, data: data || [] });
+});
+
+
 // ============================================================
 // FINISH MEETING
 // ============================================================
